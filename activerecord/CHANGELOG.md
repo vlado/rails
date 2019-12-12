@@ -1,3 +1,7 @@
+*   `.with` query method added which makes it super easy to build complex queries with common table expressions
+
+    *Vlado Cingel*
+
 *   Support passing record to uniqueness validator `:conditions` callable:
 
     ```ruby
