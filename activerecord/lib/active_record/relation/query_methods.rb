@@ -285,6 +285,60 @@ module ActiveRecord
       self
     end
 
+    # Returns a new relation, which adds Common Table Expression that you can then reference
+    # within another SELECT, INSERT, UPDATE or DELETE statement.
+    #
+    # #with accepts expressions in one of several formats. In the examples below, the resulting
+    # SQL is given as an illustration; the actual query generated may be different depending on
+    # the database adapter.
+    #
+    # === string
+    #
+    # A string is passed to the query as an SQL fragment, and used in the with statement of the query.
+    #
+    #   Post.with("posts_with_tags AS (SELECT * FROM posts WHERE tags_count > 0)")
+    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE tags_count > 0) SELECT * FROM posts
+    #
+    # Note that building your own string from user input may expose your application
+    # to injection attacks if not done properly. As an alternative, it is recommended
+    # to use the following method.
+    #
+    # === hash
+    #
+    # #with will also accept a hash, in which the keys are results names and values are expressions that
+    # will return those results.
+    #
+    # Keys can be symbols or strings. Values can be `String` or `ActiveRecord::Relation`.
+    #
+    #   Post.with("posts_with_tags" => "SELECT * FROM posts WHERE tags_count > 0")
+    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE tags_count > 0) SELECT * FROM posts
+    #
+    #   Post.with(posts_with_comments: Post.where("comments_count > ?", 0), posts_with_tags: "SELECT * FROM posts WHERE tags_count > 0")
+    #   # WITH posts_with_comments AS (SELECT * FROM posts WHERE (comments_count > 0)), posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts
+    #
+    # Please note again that building your own string from user input may expose your application
+    # to injection attacks if not done properly. It is recommended to use `ActiveRecord::Relation` instead.
+    #
+    # === example
+    #
+    # Once you have your Common Table Expression you can use custom `FROM` value or `JOIN` to reference it later
+    #
+    #   Post.with(posts_with_tags: Post.where("tags_count > ?", 0).from("posts_with_tags")
+    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts_with_tags posts
+    #
+    #   Post.with(posts_with_tags: Post.where("tags_count > ?", 0).joins("JOIN posts_with_tags ON posts_with_tags.id = posts.id")
+    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts JOIN posts_with_tags ON posts_with_tags.id = posts.id
+    def with(opts, *rest)
+      return self if opts.blank?
+
+      spawn.with!(opts, *rest)
+    end
+
+    def with!(opts, *rest)
+      self.with_values += [opts] + rest
+      self
+    end
+
     # Allows you to change a previously set select statement.
     #
     #   Post.select(:title, :body)
@@ -1071,6 +1125,8 @@ module ActiveRecord
 
         build_order(arel)
 
+        build_with(arel)
+
         build_select(arel)
 
         arel.optimizer_hints(*optimizer_hints_values) unless optimizer_hints_values.empty?
@@ -1192,6 +1248,42 @@ module ActiveRecord
           arel.project(*klass.column_names.map { |field| arel_attribute(field) })
         else
           arel.project(table[Arel.star])
+        end
+      end
+
+      def build_with(arel)
+        return if with_values.empty?
+
+        recursive = with_values.delete(:recursive)
+        with_statements = with_values.map do |with_value|
+          case with_value
+          when String then Arel::Nodes::SqlLiteral.new(with_value)
+          when Arel::Nodes::As then with_value
+          when Array
+            raise ArgumentError, "Unsupported argument type: #{with_value} #{with_value.class}" unless with_value.map(&:class).uniq == [Arel::Nodes::As]
+
+            with_value
+          when Hash then
+            with_value.map do |name, value|
+              table = Arel::Table.new(name)
+              expression = case value
+                           when String then Arel::Nodes::SqlLiteral.new("(#{value})")
+                           when ActiveRecord::Relation then value.arel
+                           when Arel::SelectManager, Arel::Nodes::Union then value
+                           else
+                             raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
+              end
+              Arel::Nodes::As.new(table, expression)
+            end
+          else
+            raise ArgumentError, "Unsupported argument type: #{with_value} #{with_value.class}"
+          end
+        end
+
+        if recursive
+          arel.with(:recursive, with_statements)
+        else
+          arel.with(with_statements)
         end
       end
 

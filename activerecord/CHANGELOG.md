@@ -1,3 +1,7 @@
+*   `.with` query method added which makes it super easy to build complex queries with common table expressions
+
+    *Vlado Cingel*
+
 *   Don't allow mutations on the datbase configurations hash.
 
     Freeze the configurations hash to disallow directly changing the configurations hash. If applications need to change the hash, for example to create adatabases for parallelization, they should use the `DatabaseConfig` object directly.

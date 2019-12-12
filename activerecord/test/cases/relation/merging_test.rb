@@ -190,4 +190,13 @@ class MergingDifferentRelationsTest < ActiveRecord::TestCase
 
     assert_equal dev.ratings, [rating_1]
   end
+
+  def test_relation_merge_with_common_table_expression
+    posts_with_tags_and_comments = Post.where("tags_count > 0").where("comments_count > 0")
+    posts_with_tags = Post.where("tags_count > 0")
+    posts_with_comments = Post.where("comments_count > 0")
+    relation = posts_with_comments.merge(Post.with(posts_with_tags: posts_with_tags)).from("posts_with_tags AS posts")
+
+    assert_equal posts_with_tags_and_comments.to_a, relation
+  end
 end
