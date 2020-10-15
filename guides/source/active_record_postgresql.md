@@ -19,7 +19,7 @@ installed. Older versions are not supported.
 
 To get started with PostgreSQL have a look at the
 [configuring Rails guide](configuring.html#configuring-a-postgresql-database).
-It describes how to properly setup Active Record for PostgreSQL.
+It describes how to properly set up Active Record for PostgreSQL.
 
 Datatypes
 ---------
@@ -276,7 +276,7 @@ end
 
 NOTE: ENUM values can't be dropped currently. You can read why [here](https://www.postgresql.org/message-id/29F36C7C98AB09499B1A209D48EAA615B7653DBC8A@mail2a.alliedtesting.com).
 
-Hint: to show all the values of the all enums you have, you should call this query in `rails db` or `psql` console:
+Hint: to show all the values of the all enums you have, you should call this query in `bin/rails db` or `psql` console:
 
 ```sql
 SELECT n.nspname AS enum_schema,
@@ -290,7 +290,7 @@ SELECT n.nspname AS enum_schema,
 ### UUID
 
 * [type definition](https://www.postgresql.org/docs/current/static/datatype-uuid.html)
-* [pgcrypto generator function](https://www.postgresql.org/docs/current/static/pgcrypto.html#id-1.11.7.35.7)
+* [pgcrypto generator function](https://www.postgresql.org/docs/current/static/pgcrypto.html)
 * [uuid-ossp generator functions](https://www.postgresql.org/docs/current/static/uuid-ossp.html)
 
 NOTE: You need to enable the `pgcrypto` (only PostgreSQL >= 9.4) or `uuid-ossp`
@@ -318,9 +318,9 @@ You can use `uuid` type to define references in migrations:
 ```ruby
 # db/migrate/20150418012400_create_blog.rb
 enable_extension 'pgcrypto' unless extension_enabled?('pgcrypto')
-create_table :posts, id: :uuid, default: 'gen_random_uuid()'
+create_table :posts, id: :uuid
 
-create_table :comments, id: :uuid, default: 'gen_random_uuid()' do |t|
+create_table :comments, id: :uuid do |t|
   # t.belongs_to :post, type: :uuid
   t.references :post, type: :uuid
 end
@@ -404,6 +404,29 @@ macbook.address
 All geometric types, with the exception of `points` are mapped to normal text.
 A point is casted to an array containing `x` and `y` coordinates.
 
+### Interval
+
+* [type definition](http://www.postgresql.org/docs/current/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
+* [functions and operators](http://www.postgresql.org/docs/current/static/functions-datetime.html)
+
+This type is mapped to [`ActiveSupport::Duration`](http://api.rubyonrails.org/classes/ActiveSupport/Duration.html) objects.
+
+```ruby
+# db/migrate/20200120000000_create_events.rb
+create_table :events do |t|
+  t.interval 'duration'
+end
+
+# app/models/event.rb
+class Event < ApplicationRecord
+end
+
+# Usage
+Event.create(duration: 2.days)
+
+event = Event.first
+event.duration # => 2 days
+```
 
 UUID Primary Keys
 -----------------
@@ -414,7 +437,7 @@ extension to generate random UUIDs.
 ```ruby
 # db/migrate/20131220144913_create_devices.rb
 enable_extension 'pgcrypto' unless extension_enabled?('pgcrypto')
-create_table :devices, id: :uuid, default: 'gen_random_uuid()' do |t|
+create_table :devices, id: :uuid do |t|
   t.string :kind
 end
 

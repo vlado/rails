@@ -8,9 +8,9 @@ This guide documents how constant autoloading and reloading works in `classic` m
 After reading this guide, you will know:
 
 * Key aspects of Ruby constants
-* What are the `autoload_paths` and how does eager loading work in production?
+* What the `autoload_paths` are and how eager loading works in production
 * How constant autoloading works
-* What is `require_dependency`
+* What `require_dependency` is
 * How constant reloading works
 * Solutions to common autoloading gotchas
 
@@ -27,8 +27,8 @@ Ruby on Rails allows applications to be written as if their code was preloaded.
 In a normal Ruby program classes need to load their dependencies:
 
 ```ruby
-require 'application_controller'
-require 'post'
+require "application_controller"
+require "post"
 
 class PostsController < ApplicationController
   def index
@@ -412,7 +412,7 @@ Rails is always able to autoload provided its environment is in place. For
 example the `runner` command autoloads:
 
 ```bash
-$ rails runner 'p User.column_names'
+$ bin/rails runner 'p User.column_names'
 ["id", "email", "created_at", "updated_at"]
 ```
 
@@ -440,7 +440,7 @@ autoload_paths and eager_load_paths
 As you probably know, when `require` gets a relative file name:
 
 ```ruby
-require 'erb'
+require "erb"
 ```
 
 Ruby looks for the file in the directories listed in `$LOAD_PATH`. That is, Ruby
@@ -477,8 +477,14 @@ How files are autoloaded depends on `eager_load` and `cache_classes` config sett
  * In **production**, however, you want consistency and thread-safety and can live with a longer boot time. So `eager_load` is set to `true`, and then during boot (before the app is ready to receive requests) Rails loads all files in the `eager_load_paths`  and then turns off auto loading (NB: autoloading may be needed during eager loading). Not autoloading after boot is a `good thing`, as autoloading can cause the app to be have thread-safety problems.
  * In **test**, for speed of execution (of individual tests) `eager_load` is `false`, so Rails follows development behaviour.
 
-What is described above are the defaults with a newly generated Rails app. There are multiple ways this can be configured differently (see [Configuring Rails Applications](configuring.html#rails-general-configuration).
-). But using `autoload_paths` on its own  in the past (before Rails 5) developers might configure `autoload_paths` to add in extra locations (e.g. `lib` which used to be an autoload path list years ago, but no longer is).  However this is now discouraged for most purposes, as it is likely to lead to production-only errors. It is possible to add new locations to both `config.eager_load_paths` and `config.autoload_paths` but use at your own risk.
+What is described above are the defaults with a newly generated Rails app.
+There are multiple ways this can be configured differently (see [Configuring
+Rails Applications](configuring.html#rails-general-configuration).). Before
+Rails 5 developers might configure `autoload_paths` to add in extra locations
+(e.g. `lib` which used to be an autoload path list years ago, but no longer
+is). However this is now discouraged for most purposes, as it is likely to
+lead to production-only errors. It is possible to add new locations to both
+`config.eager_load_paths` and `config.autoload_paths` but use at your own risk.
 
 See also [Autoloading in the Test Environment](#autoloading-in-the-test-environment).
 
@@ -486,7 +492,7 @@ The value of `autoload_paths` can be inspected. In a just-generated application
 it is (edited):
 
 ```bash
-$ rails runner 'puts ActiveSupport::Dependencies.autoload_paths'
+$ bin/rails runner 'puts ActiveSupport::Dependencies.autoload_paths'
 .../app/assets
 .../app/channels
 .../app/controllers
@@ -1030,7 +1036,7 @@ have to know all its descendants.
 Files defining constants to be autoloaded should never be `require`d:
 
 ```ruby
-require 'user' # DO NOT DO THIS
+require "user" # DO NOT DO THIS
 
 class UsersController < ApplicationController
   ...
@@ -1226,7 +1232,7 @@ been loaded but `app/models/hotel/image.rb` hasn't, Ruby does not find `Image`
 in `Hotel`, but it does in `Object`:
 
 ```bash
-$ rails runner 'Image; p Hotel::Image' 2>/dev/null
+$ bin/rails runner 'Image; p Hotel::Image' 2>/dev/null
 Image # NOT Hotel::Image!
 ```
 

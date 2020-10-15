@@ -76,6 +76,8 @@ module ActionController
 
         def http_basic_authenticate_or_request_with(name:, password:, realm: nil, message: nil)
           authenticate_or_request_with_http_basic(realm, message) do |given_name, given_password|
+            # This comparison uses & so that it doesn't short circuit and
+            # uses `secure_compare` so that length information isn't leaked.
             ActiveSupport::SecurityUtils.secure_compare(given_name, name) &
               ActiveSupport::SecurityUtils.secure_compare(given_password, password)
           end
@@ -136,7 +138,7 @@ module ActionController
     #
     # === Simple \Digest example
     #
-    #   require 'digest/md5'
+    #   require "digest/md5"
     #   class PostsController < ApplicationController
     #     REALM = "SuperSecret"
     #     USERS = {"dhh" => "secret", #plain text password

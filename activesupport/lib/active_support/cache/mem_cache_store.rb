@@ -7,6 +7,7 @@ rescue LoadError => e
   raise e
 end
 
+require "active_support/core_ext/enumerable"
 require "active_support/core_ext/marshal"
 require "active_support/core_ext/array/extract_options"
 
@@ -25,17 +26,11 @@ module ActiveSupport
     # MemCacheStore implements the Strategy::LocalCache strategy which implements
     # an in-memory cache inside of a block.
     class MemCacheStore < Store
+      DEFAULT_CODER = NullCoder # Dalli automatically Marshal values
+
       # Provide support for raw values in the local cache strategy.
       module LocalCacheWithRaw # :nodoc:
         private
-          def read_entry(key, **options)
-            entry = super
-            if options[:raw] && local_cache && entry
-              entry = deserialize_entry(entry.value)
-            end
-            entry
-          end
-
           def write_entry(key, entry, **options)
             if options[:raw] && local_cache
               raw_entry = Entry.new(entry.value.to_s)
@@ -148,21 +143,22 @@ module ActiveSupport
 
         # Write an entry to the cache.
         def write_entry(key, entry, **options)
-          method = options && options[:unless_exist] ? :add : :set
-          value = options[:raw] ? entry.value.to_s : entry
+          method = options[:unless_exist] ? :add : :set
+          value = options[:raw] ? entry.value.to_s : serialize_entry(entry)
           expires_in = options[:expires_in].to_i
-          if expires_in > 0 && !options[:raw]
+          if options[:race_condition_ttl] && expires_in > 0 && !options[:raw]
             # Set the memcache expire a few minutes in the future to support race condition ttls on read
             expires_in += 5.minutes
           end
           rescue_error_with false do
-            @data.with { |c| c.send(method, key, value, expires_in, **options) }
+            # The value "compress: false" prevents duplicate compression within Dalli.
+            @data.with { |c| c.send(method, key, value, expires_in, **options, compress: false) }
           end
         end
 
         # Reads multiple entries from the cache implementation.
         def read_multi_entries(names, **options)
-          keys_to_names = Hash[names.map { |name| [normalize_key(name, options), name] }]
+          keys_to_names = names.index_by { |name| normalize_key(name, options) }
 
           raw_values = @data.with { |c| c.get_multi(keys_to_names.keys) }
           values = {}
@@ -194,11 +190,10 @@ module ActiveSupport
           key
         end
 
-        def deserialize_entry(raw_value)
-          if raw_value
-            entry = Marshal.load(raw_value) rescue raw_value
-            entry.is_a?(Entry) ? entry : Entry.new(entry)
-          end
+        def deserialize_entry(payload)
+          entry = super
+          entry = Entry.new(entry, compress: false) if entry && !entry.is_a?(Entry)
+          entry
         end
 
         def rescue_error_with(fallback)

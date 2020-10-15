@@ -44,6 +44,7 @@ Having a way to reproduce your issue will be very helpful for others to help con
 * Template for Action Pack (controllers, routing) issues: [gem](https://github.com/rails/rails/blob/master/guides/bug_report_templates/action_controller_gem.rb) / [master](https://github.com/rails/rails/blob/master/guides/bug_report_templates/action_controller_master.rb)
 * Template for Active Job issues: [gem](https://github.com/rails/rails/blob/master/guides/bug_report_templates/active_job_gem.rb) / [master](https://github.com/rails/rails/blob/master/guides/bug_report_templates/active_job_master.rb)
 * Template for Active Storage issues: [gem](https://github.com/rails/rails/blob/master/guides/bug_report_templates/active_storage_gem.rb) / [master](https://github.com/rails/rails/blob/master/guides/bug_report_templates/active_storage_master.rb)
+* Template for Action Mailbox issues: [gem](https://github.com/rails/rails/blob/master/guides/bug_report_templates/action_mailbox_gem.rb) / [master](https://github.com/rails/rails/blob/master/guides/bug_report_templates/action_mailbox_master.rb)
 * Generic template for other issues: [gem](https://github.com/rails/rails/blob/master/guides/bug_report_templates/generic_gem.rb) / [master](https://github.com/rails/rails/blob/master/guides/bug_report_templates/generic_master.rb)
 
 These templates include the boilerplate code to set up a test case against either a released version of Rails (`*_gem.rb`) or edge Rails (`*_master.rb`).
@@ -74,7 +75,7 @@ submissions! They just won't get backported to maintenance branches.
 
 If you'd like feedback on an idea for a feature before doing the work to make
 a patch, please send an email to the [rails-core mailing
-list](https://groups.google.com/forum/?fromgroups#!forum/rubyonrails-core). You
+list](https://discuss.rubyonrails.org/c/rubyonrails-core). You
 might get no response, which means that everyone is indifferent. You might find
 someone who's also interested in building that feature. You might get a "This
 won't be accepted". But it's the proper place to discuss new ideas. GitHub
@@ -140,7 +141,7 @@ changes to the master branch.
 
 When working with documentation, please take into account the [API Documentation Guidelines](api_documentation_guidelines.html) and the [Ruby on Rails Guides Guidelines](ruby_on_rails_guides_guidelines.html).
 
-NOTE: For documentation changes, your commit message should include [ci skip]. This will skip running the test suite, helping us to cut down on our server costs. Keep in mind that you should only skip CI when your change touches documentation exclusively.
+NOTE: For documentation changes, your pull request title should include [ci skip]. This will skip running the test suite, helping us to cut down on our server costs. Keep in mind that you should only skip CI when your change touches documentation exclusively.
 
 Translating Rails Guides
 ------------------------
@@ -154,21 +155,23 @@ We are happy to have people volunteer to translate the Rails guides. Just follow
 
 Note that translations are not submitted to the Rails repository. As detailed above, your work happens in a fork. This is so because in practice documentation maintenance via patches is only sustainable in English.
 
-To generate the guides in HTML format cd into the *guides* directory then run (e.g. for it-IT):
+To generate the guides in HTML format you will need to install the guides dependencies, `cd` into the *guides* directory, and then run (e.g. for it-IT):
 
 ```bash
-$ bundle install
+# only install gems necessary for the guides. To undo run: bundle config --delete without
+$ bundle install --without job cable storage ujs test db
+$ cd guides/
 $ bundle exec rake guides:generate:html GUIDES_LANGUAGE=it-IT
 ```
 
 This will generate the guides in an *output* directory.
 
-NOTE: The instructions are for Rails > 4. The Redcarpet Gem doesn't work with JRuby.
+NOTE: The Redcarpet Gem doesn't work with JRuby.
 
 Translation efforts we know about (various versions):
 
 * **Italian**: [https://github.com/rixlabs/docrails](https://github.com/rixlabs/docrails)
-* **Spanish**: [https://github.com/gramos/docrails/wiki](https://github.com/gramos/docrails/wiki)
+* **Spanish**: [https://github.com/latinadeveloper/railsguides.es](https://github.com/latinadeveloper/railsguides.es)
 * **Polish**: [https://github.com/apohllo/docrails](https://github.com/apohllo/docrails)
 * **French** : [https://github.com/railsfrance/docrails](https://github.com/railsfrance/docrails)
 * **Czech** : [https://github.com/rubyonrails-cz/docrails/tree/czech](https://github.com/rubyonrails-cz/docrails/tree/czech)
@@ -178,13 +181,14 @@ Translation efforts we know about (various versions):
 * **Traditional Chinese** : [https://github.com/docrails-tw/guides](https://github.com/docrails-tw/guides)
 * **Russian** : [https://github.com/morsbox/rusrails](https://github.com/morsbox/rusrails)
 * **Japanese** : [https://github.com/yasslab/railsguides.jp](https://github.com/yasslab/railsguides.jp)
+* **Brazilian Portuguese** : [https://github.com/campuscode/rails-guides-pt-BR](https://github.com/campuscode/rails-guides-pt-BR)
 
 Contributing to the Rails Code
 ------------------------------
 
 ### Setting Up a Development Environment
 
-To move on from submitting bugs to helping resolve existing issues or contributing your own code to Ruby on Rails, you _must_ be able to run its test suite. In this section of the guide, you'll learn how to setup the tests on your own computer.
+To move on from submitting bugs to helping resolve existing issues or contributing your own code to Ruby on Rails, you _must_ be able to run its test suite. In this section of the guide, you'll learn how to set up the tests on your own computer.
 
 #### The Easy Way
 
@@ -288,7 +292,7 @@ scenarios. Ideally, they should be based on real-world scenarios extracted
 from production applications.
 
 You can use the [benchmark template](https://github.com/rails/rails/blob/master/guides/bug_report_templates/benchmark.rb)
-as a starting point. It includes the boilerplate code to setup a benchmark
+as a starting point. It includes the boilerplate code to set up a benchmark
 using the [benchmark-ips](https://github.com/evanphx/benchmark-ips) gem. The
 template is designed for testing relatively self-contained changes that can be
 inlined into the script.
@@ -356,7 +360,7 @@ $ bundle exec ruby -w -Itest test/mail_layout_test.rb -n test_explicit_class_lay
 
 The `-n` option allows you to run a single method instead of the whole file.
 
-#### Running tests with a specific seed
+#### Running Tests with a Specific Seed
 
 Test execution is randomized with a randomization seed. If you are experiencing random
 test failures you can more accurately reproduce a failing test scenario by specifically
@@ -374,6 +378,16 @@ Running a single test file:
 ```bash
 $ cd actionmailer
 $ SEED=15002 bundle exec ruby -w -Itest test/mail_layout_test.rb
+```
+
+#### Running Tests in Serial
+
+Action Pack and Action View unit tests run in parallel by default. If you are experiencing random
+test failures you can set the randomization seed and let these unit tests run in serial by setting `PARALLEL_WORKERS=1`
+
+```bash
+$ cd actionview
+$ PARALLEL_WORKERS=1 SEED=53708 bundle exec ruby -w -Itest test/template/test_case_test.rb
 ```
 
 #### Testing Active Record
@@ -405,8 +419,8 @@ $ bundle exec rake test:sqlite3
 You can now run the tests as you did for `sqlite3`. The tasks are respectively:
 
 ```bash
-test:mysql2
-test:postgresql
+$ bundle exec rake test:mysql2
+$ bundle exec rake test:postgresql
 ```
 
 Finally,
@@ -453,7 +467,9 @@ A CHANGELOG entry should summarize what was changed and should end with the auth
           end
         end
 
-    You can continue after the code example and you can attach issue number. Fixes #1234.
+    You can continue after the code example and you can attach issue number.
+
+    Fixes #1234.
 
     *Your Name*
 ```
@@ -598,18 +614,23 @@ is the open source life.
 
 If it's been over a week, and you haven't heard anything, you might want to try
 and nudge things along. You can use the [rubyonrails-core mailing
-list](https://groups.google.com/forum/#!forum/rubyonrails-core) for this. You can also
+list](https://discuss.rubyonrails.org/c/rubyonrails-core) for this. You can also
 leave another comment on the pull request.
 
 While you're waiting for feedback on your pull request, open up a few other
 pull requests and give someone else some! I'm sure they'll appreciate it in
 the same way that you appreciate feedback on your patches.
 
+Note that your pull request may be marked as "Approved" by somebody who does not
+have access to merge it. Further changes may still be required before members of
+the core or committer teams accept it. To prevent confusion, when giving
+feedback on someone else's pull request please avoid marking it as "Approved."
+
 ### Iterate as Necessary
 
 It's entirely possible that the feedback you get will suggest changes. Don't get discouraged: the whole point of contributing to an active open source project is to tap into the knowledge of the community. If people are encouraging you to tweak your code, then it's worth making the tweaks and resubmitting. If the feedback is that your code doesn't belong in the core, you might still think about releasing it as a gem.
 
-#### Squashing commits
+#### Squashing Commits
 
 One of the things that we may ask you to do is to "squash your commits", which
 will combine all of your commits into a single commit. We prefer pull requests
@@ -632,7 +653,7 @@ $ git push fork my_new_branch --force-with-lease
 You should be able to refresh the pull request on GitHub and see that it has
 been updated.
 
-#### Updating a pull request
+#### Updating a Pull Request
 
 Sometimes you will be asked to make some changes to the code you have
 already committed. This can include amending existing commits. In this
@@ -660,6 +681,8 @@ $ git checkout 4-0-stable
 ```
 
 TIP: You may want to [put your Git branch name in your shell prompt](http://qugstart.com/blog/git-and-svn/add-colored-git-branch-name-to-your-shell-prompt/) to make it easier to remember which version of the code you're working with.
+
+NOTE: Before working on older versions, please check the [maintenance policy](maintenance_policy.html).
 
 #### Backporting
 

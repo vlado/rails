@@ -7,7 +7,7 @@ module ActiveRecord
                             :order, :joins, :left_outer_joins, :references,
                             :extending, :unscope, :optimizer_hints, :annotate, :with]
 
-    SINGLE_VALUE_METHODS = [:limit, :offset, :lock, :readonly, :reordering,
+    SINGLE_VALUE_METHODS = [:limit, :offset, :lock, :readonly, :reordering, :strict_loading,
                             :reverse_order, :distinct, :create_with, :skip_query_cache]
 
     CLAUSE_METHODS = [:where, :having, :from]
@@ -28,7 +28,6 @@ module ActiveRecord
       @klass  = klass
       @table  = table
       @values = values
-      @offsets = {}
       @loaded = false
       @predicate_builder = predicate_builder
       @delegate_to_klass = false
@@ -40,8 +39,9 @@ module ActiveRecord
     end
 
     def arel_attribute(name) # :nodoc:
-      klass.arel_attribute(name, table)
+      table[name]
     end
+    deprecate :arel_attribute
 
     def bind_attribute(name, value) # :nodoc:
       if reflection = klass._reflect_on_association(name)
@@ -49,7 +49,7 @@ module ActiveRecord
         value = value.read_attribute(reflection.klass.primary_key) unless value.nil?
       end
 
-      attr = arel_attribute(name)
+      attr = table[name]
       bind = predicate_builder.build_bind_attribute(attr.name, value)
       yield attr, bind
     end
@@ -308,7 +308,7 @@ module ActiveRecord
     # last updated record.
     #
     #   Product.where("name like ?", "%Game%").cache_key(:last_reviewed_at)
-    def cache_key(timestamp_column = :updated_at)
+    def cache_key(timestamp_column = "updated_at")
       @cache_keys ||= {}
       @cache_keys[timestamp_column] ||= klass.collection_cache_key(self, timestamp_column)
     end
@@ -317,7 +317,7 @@ module ActiveRecord
       query_signature = ActiveSupport::Digest.hexdigest(to_sql)
       key = "#{klass.model_name.cache_key}/query-#{query_signature}"
 
-      if cache_version(timestamp_column)
+      if collection_cache_versioning
         key
       else
         "#{key}-#{compute_cache_version(timestamp_column)}"
@@ -343,15 +343,17 @@ module ActiveRecord
     end
 
     def compute_cache_version(timestamp_column) # :nodoc:
+      timestamp_column = timestamp_column.to_s
+
       if loaded? || distinct_value
         size = records.size
         if size > 0
-          timestamp = max_by(&timestamp_column)._read_attribute(timestamp_column)
+          timestamp = records.map { |record| record.read_attribute(timestamp_column) }.max
         end
       else
         collection = eager_loading? ? apply_join_dependency : self
 
-        column = connection.visitor.compile(arel_attribute(timestamp_column))
+        column = connection.visitor.compile(table[timestamp_column])
         select_values = "COUNT(*) AS #{connection.quote_column_name("size")}, MAX(%s) AS timestamp"
 
         if collection.has_limit_or_offset?
@@ -365,14 +367,12 @@ module ActiveRecord
           arel = query.arel
         end
 
-        result = connection.select_one(arel, nil)
+        size, timestamp = connection.select_rows(arel, nil).first
 
-        if result
+        if size
           column_type = klass.type_for_attribute(timestamp_column)
-          timestamp = column_type.deserialize(result["timestamp"])
-          size = result["size"]
+          timestamp = column_type.deserialize(timestamp)
         else
-          timestamp = nil
           size = 0
         end
       end
@@ -384,6 +384,15 @@ module ActiveRecord
       end
     end
     private :compute_cache_version
+
+    # Returns a cache key along with the version.
+    def cache_key_with_version
+      if version = cache_version
+        "#{cache_key}-#{version}"
+      else
+        cache_key
+      end
+    end
 
     # Scope all queries to the current scope.
     #
@@ -408,7 +417,7 @@ module ActiveRecord
     # Updates all records in the current relation with details given. This method constructs a single SQL UPDATE
     # statement and sends it straight to the database. It does not instantiate the involved models and it does not
     # trigger Active Record callbacks or validations. However, values passed to #update_all will still go through
-    # Active Record's normal type casting and serialization.
+    # Active Record's normal type casting and serialization. Returns the number of rows affected.
     #
     # Note: As Active Record callbacks are not triggered, this method will not automatically update +updated_at+/+updated_on+ columns.
     #
@@ -439,7 +448,7 @@ module ActiveRecord
 
       stmt = Arel::UpdateManager.new
       stmt.table(arel.join_sources.empty? ? table : arel.source)
-      stmt.key = arel_attribute(primary_key)
+      stmt.key = table[primary_key]
       stmt.take(arel.limit)
       stmt.offset(arel.offset)
       stmt.order(*arel.orders)
@@ -449,7 +458,7 @@ module ActiveRecord
         if klass.locking_enabled? &&
             !updates.key?(klass.locking_column) &&
             !updates.key?(klass.locking_column.to_sym)
-          attr = arel_attribute(klass.locking_column)
+          attr = table[klass.locking_column]
           updates[attr.name] = _increment_attribute(attr)
         end
         stmt.set _substitute_values(updates)
@@ -485,13 +494,13 @@ module ActiveRecord
 
       updates = {}
       counters.each do |counter_name, value|
-        attr = arel_attribute(counter_name)
+        attr = table[counter_name]
         updates[attr.name] = _increment_attribute(attr, value)
       end
 
       if touch
         names = touch if touch != true
-        names = Array(names)
+        names = Array.wrap(names)
         options = names.extract_options!
         touch_updates = klass.touch_attributes_with_time(*names, **options)
         updates.merge!(touch_updates) unless touch_updates.empty?
@@ -500,8 +509,8 @@ module ActiveRecord
       update_all updates
     end
 
-    # Touches all records in the current relation without instantiating records first with the +updated_at+/+updated_on+ attributes
-    # set to the current time or the time specified.
+    # Touches all records in the current relation, setting the +updated_at+/+updated_on+ attributes to the current time or the time specified.
+    # It does not instantiate the involved models, and it does not trigger Active Record callbacks or validations.
     # This method can be passed attribute names and an optional time argument.
     # If attribute names are passed, they are updated along with +updated_at+/+updated_on+ attributes.
     # If no time argument is passed, the current time is used as default.
@@ -581,7 +590,7 @@ module ActiveRecord
 
       stmt = Arel::DeleteManager.new
       stmt.from(arel.join_sources.empty? ? table : arel.source)
-      stmt.key = arel_attribute(primary_key)
+      stmt.key = table[primary_key]
       stmt.take(arel.limit)
       stmt.offset(arel.offset)
       stmt.order(*arel.orders)
@@ -644,9 +653,8 @@ module ActiveRecord
       @delegate_to_klass = false
       @_deprecated_scope_source = nil
       @to_sql = @arel = @loaded = @should_eager_load = nil
+      @offsets = @take = nil
       @records = [].freeze
-      @offsets = {}
-      @take = nil
       self
     end
 
@@ -677,7 +685,10 @@ module ActiveRecord
     end
 
     def scope_for_create
-      where_values_hash.merge!(create_with_value.stringify_keys)
+      hash = where_values_hash
+      hash.delete(klass.inheritance_column) if klass.finder_needs_type_condition?
+      create_with_value.each { |k, v| hash[k.to_s] = v } unless create_with_value.empty?
+      hash
     end
 
     # Returns true if relation needs eager loading.
@@ -738,17 +749,27 @@ module ActiveRecord
     end
 
     def alias_tracker(joins = [], aliases = nil) # :nodoc:
-      joins += [aliases] if aliases
-      ActiveRecord::Associations::AliasTracker.create(connection, table.name, joins)
+      ActiveRecord::Associations::AliasTracker.create(connection, table.name, joins, aliases)
+    end
+
+    class StrictLoadingScope # :nodoc:
+      def self.empty_scope?
+        true
+      end
+
+      def self.strict_loading_value
+        true
+      end
     end
 
     def preload_associations(records) # :nodoc:
       preload = preload_values
       preload += includes_values unless eager_loading?
       preloader = nil
+      scope = strict_loading_value ? StrictLoadingScope : nil
       preload.each do |associations|
         preloader ||= build_preloader
-        preloader.preload records, associations
+        preloader.preload records, associations, scope
       end
     end
 
@@ -794,7 +815,7 @@ module ActiveRecord
 
       def _substitute_values(values)
         values.map do |name, value|
-          attr = arel_attribute(name)
+          attr = table[name]
           unless Arel.arel_node?(value)
             type = klass.type_for_attribute(attr.name)
             value = predicate_builder.build_bind_attribute(attr.name, type.cast(value))
@@ -822,7 +843,7 @@ module ActiveRecord
                 else
                   relation = join_dependency.apply_column_aliases(relation)
                   rows = connection.select_all(relation.arel, "SQL")
-                  join_dependency.instantiate(rows, &block)
+                  join_dependency.instantiate(rows, strict_loading_value, &block)
                 end.freeze
               end
             else
@@ -832,6 +853,7 @@ module ActiveRecord
           preload_associations(records) unless skip_preloading_value
 
           records.each(&:readonly!) if readonly_value
+          records.each(&:strict_loading!) if strict_loading_value
 
           records
         end
@@ -852,27 +874,27 @@ module ActiveRecord
       end
 
       def references_eager_loaded_tables?
-        joined_tables = arel.join_sources.map do |join|
+        joined_tables = build_joins([]).flat_map do |join|
           if join.is_a?(Arel::Nodes::StringJoin)
             tables_in_string(join.left)
           else
-            [join.left.table_name, join.left.table_alias]
+            join.left.name
           end
         end
 
-        joined_tables += [table.name, table.table_alias]
+        joined_tables << table.name
 
         # always convert table names to downcase as in Oracle quoted table names are in uppercase
-        joined_tables = joined_tables.flatten.compact.map(&:downcase).uniq
+        joined_tables.map!(&:downcase)
 
-        (references_values - joined_tables).any?
+        !(references_values.map(&:to_s) - joined_tables).empty?
       end
 
       def tables_in_string(string)
         return [] if string.blank?
         # always convert table names to downcase as in Oracle quoted table names are in uppercase
         # ignore raw_sql_ that is used by Oracle adapter as alias for limit/offset subqueries
-        string.scan(/([a-zA-Z_][.\w]+).?\./).flatten.map(&:downcase).uniq - ["raw_sql_"]
+        string.scan(/[a-zA-Z_][.\w]+(?=.?\.)/).map!(&:downcase) - ["raw_sql_"]
       end
   end
 end

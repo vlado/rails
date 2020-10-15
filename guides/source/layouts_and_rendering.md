@@ -53,7 +53,7 @@ And you have a view file `app/views/books/index.html.erb`:
 
 Rails will automatically render `app/views/books/index.html.erb` when you navigate to `/books` and you will see "Books are coming soon!" on your screen.
 
-However a coming soon screen is only minimally useful, so you will soon create your `Book` model and add the index action to `BooksController`:
+However, a coming soon screen is only minimally useful, so you will soon create your `Book` model and add the index action to `BooksController`:
 
 ```ruby
 class BooksController < ApplicationController
@@ -151,7 +151,7 @@ render template: "products/show"
 
 #### Wrapping it up
 
-The above three ways of rendering (rendering another template within the controller, rendering a template within another controller, and rendering an arbitrary file on the file system) are actually variants of the same action.
+The above two ways of rendering (rendering the template of another action in the same controller, and rendering the template of another action in a different controller) are actually variants of the same operation.
 
 In fact, in the BooksController class, inside of the update action where we want to render the edit template if the book does not update successfully, all of the following render calls would all render the `edit.html.erb` template in the `views/books` directory:
 
@@ -276,6 +276,16 @@ WARNING: Using the `:file` option in combination with users input can lead to se
 since an attacker could use this action to access security sensitive files in your file system.
 
 TIP: `send_file` is often a faster and better option if a layout isn't required.
+
+#### Rendering objects
+
+Rails can render objects responding to `:render_in`.
+
+```ruby
+render MyRenderable.new
+```
+
+This calls `render_in` on the provided object with the current view context.
 
 #### Options for `render`
 
@@ -744,7 +754,7 @@ head :bad_request
 
 This would produce the following header:
 
-```
+```http
 HTTP/1.1 400 Bad Request
 Connection: close
 Date: Sun, 24 Jan 2010 12:15:53 GMT
@@ -763,7 +773,7 @@ head :created, location: photo_path(@photo)
 
 Which would produce:
 
-```
+```http
 HTTP/1.1 201 Created
 Connection: close
 Date: Sun, 24 Jan 2010 12:16:44 GMT

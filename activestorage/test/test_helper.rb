@@ -8,6 +8,7 @@ require "active_support"
 require "active_support/test_case"
 require "active_support/core_ext/object/try"
 require "active_support/testing/autorun"
+require "active_support/configuration_file"
 require "active_storage/service/mirror_service"
 require "image_processing/mini_magick"
 
@@ -20,14 +21,8 @@ require "active_job"
 ActiveJob::Base.queue_adapter = :test
 ActiveJob::Base.logger = ActiveSupport::Logger.new(nil)
 
-# Filter out the backtrace from minitest while preserving the one from other libraries.
-Minitest.backtrace_filter = Minitest::BacktraceFilter.new
-
-require "yaml"
 SERVICE_CONFIGURATIONS = begin
-  erb = ERB.new(Pathname.new(File.expand_path("service/configurations.yml", __dir__)).read)
-  configuration = YAML.load(erb.result) || {}
-  configuration.deep_symbolize_keys
+  ActiveSupport::ConfigurationFile.parse(File.expand_path("service/configurations.yml", __dir__)).deep_symbolize_keys
 rescue Errno::ENOENT
   puts "Missing service configuration file in test/service/configurations.yml"
   {}
@@ -114,7 +109,7 @@ end
 
 require "global_id"
 GlobalID.app = "ActiveStorageExampleApp"
-ActiveRecord::Base.send :include, GlobalID::Identification
+ActiveRecord::Base.include GlobalID::Identification
 
 class User < ActiveRecord::Base
   validates :name, presence: true
@@ -128,6 +123,9 @@ end
 
 class Group < ActiveRecord::Base
   has_one_attached :avatar
+  has_many :users, autosave: true
+
+  accepts_nested_attributes_for :users
 end
 
 require_relative "../../tools/test_common"

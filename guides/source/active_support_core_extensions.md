@@ -26,7 +26,7 @@ In order to have a near-zero default footprint, Active Support does not load any
 Thus, after a simple require like:
 
 ```ruby
-require 'active_support'
+require "active_support"
 ```
 
 objects do not even respond to `blank?`. Let's see how to load its definition.
@@ -42,8 +42,8 @@ NOTE: Defined in `active_support/core_ext/object/blank.rb`.
 That means that you can require it like this:
 
 ```ruby
-require 'active_support'
-require 'active_support/core_ext/object/blank'
+require "active_support"
+require "active_support/core_ext/object/blank"
 ```
 
 Active Support has been carefully revised so that cherry-picking a file loads only strictly needed dependencies, if any.
@@ -55,8 +55,8 @@ The next level is to simply load all extensions to `Object`. As a rule of thumb,
 Thus, to load all extensions to `Object` (including `blank?`):
 
 ```ruby
-require 'active_support'
-require 'active_support/core_ext/object'
+require "active_support"
+require "active_support/core_ext/object"
 ```
 
 #### Loading All Core Extensions
@@ -64,8 +64,8 @@ require 'active_support/core_ext/object'
 You may prefer just to load all core extensions, there is a file for that:
 
 ```ruby
-require 'active_support'
-require 'active_support/core_ext'
+require "active_support"
+require "active_support/core_ext"
 ```
 
 #### Loading All Active Support
@@ -73,7 +73,7 @@ require 'active_support/core_ext'
 And finally, if you want to have all Active Support available just issue:
 
 ```ruby
-require 'active_support/all'
+require "active_support/all"
 ```
 
 That does not even put the entire Active Support in memory upfront indeed, some stuff is configured via `autoload`, so it is only loaded if used.
@@ -180,7 +180,7 @@ array     # => ['foo']
 duplicate # => ['foo', 'another-string']
 ```
 
-As you can see, after duplicating the `Array` instance, we got another object, therefore we can modify it and the original object will stay unchanged. This is not true for array's elements, however. Since `dup` does not make deep copy, the string inside the array is still the same object.
+As you can see, after duplicating the `Array` instance, we got another object, therefore we can modify it and the original object will stay unchanged. This is not true for array's elements, however. Since `dup` does not make a deep copy, the string inside the array is still the same object.
 
 If you need a deep copy of an object, you should use `deep_dup`. Here is an example:
 
@@ -1611,7 +1611,7 @@ The method understands qualified table names:
 "highrise_production.companies".classify # => "Company"
 ```
 
-Note that `classify` returns a class name as a string. You can get the actual class object invoking `constantize` on it, explained next.
+Note that `classify` returns a class name as a string. You can get the actual class object by invoking `constantize` on it, explained next.
 
 NOTE: Defined in `active_support/core_ext/string/inflections.rb`.
 
@@ -1650,7 +1650,7 @@ Mailer test cases obtain the mailer being tested from the name of the test class
 ```ruby
 # action_mailer/test_case.rb
 def determine_default_mailer(name)
-  name.sub(/Test$/, '').constantize
+  name.delete_suffix("Test").constantize
 rescue NameError => e
   raise NonInferrableMailerError.new(name)
 end
@@ -1662,7 +1662,7 @@ NOTE: Defined in `active_support/core_ext/string/inflections.rb`.
 
 The method `humanize` tweaks an attribute name for display to end users.
 
-Specifically performs these transformations:
+Specifically, it performs these transformations:
 
   * Applies human inflection rules to the argument.
   * Deletes leading underscores, if any.
@@ -1757,6 +1757,20 @@ Please refer to the documentation of `Date._parse` for further details.
 INFO: The three of them return `nil` for blank receivers.
 
 NOTE: Defined in `active_support/core_ext/string/conversions.rb`.
+
+Extensions to `Symbol`
+----------------------
+
+### `starts_with?` and `ends_with?`
+
+Active Support defines 3rd person aliases of `Symbol#start_with?` and `Symbol#end_with?`:
+
+```ruby
+:foo.starts_with?("f") # => true
+:foo.ends_with?("o")   # => true
+```
+
+NOTE: Defined in `active_support/core_ext/symbol/starts_ends_with.rb`.
 
 Extensions to `Numeric`
 -----------------------
@@ -2119,10 +2133,22 @@ NOTE: Defined in `active_support/core_ext/enumerable.rb`.
 
 ### `pluck`
 
-The method `pluck` returns an array based on the given key:
+The method `pluck` extracts the given key from each element:
 
 ```ruby
 [{ name: "David" }, { name: "Rafael" }, { name: "Aaron" }].pluck(:name) # => ["David", "Rafael", "Aaron"]
+[{ id: 1, name: "David" }, { id: 2, name: "Rafael" }].pluck(:id, :name) # => [[1, "David"], [2, "Rafael"]]
+```
+
+NOTE: Defined in `active_support/core_ext/enumerable.rb`.
+
+### `pick`
+
+The method `pick` extracts the given key from the first element:
+
+```ruby
+[{ name: "David" }, { name: "Rafael" }, { name: "Aaron" }].pick(:name) # => "David"
+[{ id: 1, name: "David" }, { id: 2, name: "Rafael" }].pick(:id, :name) # => [1, "David"]
 ```
 
 NOTE: Defined in `active_support/core_ext/enumerable.rb`.
@@ -2401,7 +2427,7 @@ NOTE: Defined in `active_support/core_ext/array/wrap.rb`.
 ### Duplicating
 
 The method `Array#deep_dup` duplicates itself and all objects inside
-recursively with Active Support method `Object#deep_dup`. It works like `Array#map` with sending `deep_dup` method to each object inside.
+recursively with the Active Support method `Object#deep_dup`. It works like `Array#map`, sending `deep_dup` method to each object inside.
 
 ```ruby
 array = [1, [2, 3]]
@@ -2434,19 +2460,19 @@ or yields them in turn if a block is passed:
 <% end %>
 ```
 
-The first example shows `in_groups_of` fills the last group with as many `nil` elements as needed to have the requested size. You can change this padding value using the second optional argument:
+The first example shows how `in_groups_of` fills the last group with as many `nil` elements as needed to have the requested size. You can change this padding value using the second optional argument:
 
 ```ruby
 [1, 2, 3].in_groups_of(2, 0) # => [[1, 2], [3, 0]]
 ```
 
-And you can tell the method not to fill the last group passing `false`:
+And you can tell the method not to fill the last group by passing `false`:
 
 ```ruby
 [1, 2, 3].in_groups_of(2, false) # => [[1, 2], [3]]
 ```
 
-As a consequence `false` can't be a used as a padding value.
+As a consequence `false` can't be used as a padding value.
 
 NOTE: Defined in `active_support/core_ext/array/grouping.rb`.
 
@@ -2477,14 +2503,14 @@ You can change this padding value using the second optional argument:
 # => [["1", "2", "3"], ["4", "5", "0"], ["6", "7", "0"]]
 ```
 
-And you can tell the method not to fill the smaller groups passing `false`:
+And you can tell the method not to fill the smaller groups by passing `false`:
 
 ```ruby
 %w(1 2 3 4 5 6 7).in_groups(3, false)
 # => [["1", "2", "3"], ["4", "5"], ["6", "7"]]
 ```
 
-As a consequence `false` can't be a used as a padding value.
+As a consequence `false` can't be used as a padding value.
 
 NOTE: Defined in `active_support/core_ext/array/grouping.rb`.
 
@@ -2654,7 +2680,7 @@ If the receiver responds to `convert_key`, the method is called on each of the a
 {a: 1}.with_indifferent_access.except("a") # => {}
 ```
 
-There's also the bang variant `except!` that removes keys in the very receiver.
+There's also the bang variant `except!` that removes keys in place.
 
 NOTE: Defined in `active_support/core_ext/hash/except.rb`.
 
@@ -2687,9 +2713,9 @@ end
 
 The second line can safely access the "type" key, and let the user to pass either `:type` or "type".
 
-There's also the bang variant `stringify_keys!` that stringifies keys in the very receiver.
+There's also the bang variant `stringify_keys!` that stringifies keys in place.
 
-Besides that, one can use `deep_stringify_keys` and `deep_stringify_keys!` to stringify all the keys in the given hash and all the hashes nested into it. An example of the result is:
+Besides that, one can use `deep_stringify_keys` and `deep_stringify_keys!` to stringify all the keys in the given hash and all the hashes nested in it. An example of the result is:
 
 ```ruby
 {nil => nil, 1 => 1, nested: {a: 3, 5 => 5}}.deep_stringify_keys
@@ -2717,21 +2743,22 @@ In case of key collision, the value will be the one most recently inserted into 
 # => {:a=>2}
 ```
 
-This method may be useful for example to easily accept both symbols and strings as options. For instance `ActionController::UrlRewriter` defines
+This method may be useful for example to easily accept both symbols and strings as options. For instance `ActionText::TagHelper` defines
 
 ```ruby
-def rewrite_path(options)
+def rich_text_area_tag(name, value = nil, options = {})
   options = options.symbolize_keys
-  options.update(options[:params].symbolize_keys) if options[:params]
+
+  options[:input] ||= "trix_input_#{ActionText::TagHelper.id += 1}
   ...
 end
 ```
 
-The second line can safely access the `:params` key, and let the user to pass either `:params` or "params".
+The third line can safely access the `:input` key, and let the user to pass either `:input` or "input".
 
-There's also the bang variant `symbolize_keys!` that symbolizes keys in the very receiver.
+There's also the bang variant `symbolize_keys!` that symbolizes keys in place.
 
-Besides that, one can use `deep_symbolize_keys` and `deep_symbolize_keys!` to symbolize all the keys in the given hash and all the hashes nested into it. An example of the result is:
+Besides that, one can use `deep_symbolize_keys` and `deep_symbolize_keys!` to symbolize all the keys in the given hash and all the hashes nested in it. An example of the result is:
 
 ```ruby
 {nil => nil, 1 => 1, "nested" => {"a" => 3, 5 => 5}}.deep_symbolize_keys
@@ -2748,7 +2775,7 @@ NOTE: Defined in `active_support/core_ext/hash/keys.rb`.
 
 #### `assert_valid_keys`
 
-The method `assert_valid_keys` receives an arbitrary number of arguments, and checks whether the receiver has any key outside that white list. If it does `ArgumentError` is raised.
+The method `assert_valid_keys` receives an arbitrary number of arguments, and checks whether the receiver has any key outside that list. If it does `ArgumentError` is raised.
 
 ```ruby
 {a: 1}.assert_valid_keys(:a)  # passes
@@ -2798,7 +2825,7 @@ rest = hash.extract!(:a) # => {:a=>1}
 hash                     # => {:b=>2}
 ```
 
-The method `extract!` returns the same subclass of Hash, that the receiver is.
+The method `extract!` returns the same subclass of Hash that the receiver is.
 
 ```ruby
 hash = {a: 1, b: 2}.with_indifferent_access
@@ -2916,7 +2943,7 @@ INFO: The following calculation methods have edge cases in October 1582, since d
 
 #### `Date.current`
 
-Active Support defines `Date.current` to be today in the current time zone. That's like `Date.today`, except that it honors the user time zone, if defined. It also defines `Date.yesterday` and `Date.tomorrow`, and the instance predicates `past?`, `today?`, `future?`, `on_weekday?` and `on_weekend?`, all of them relative to `Date.current`.
+Active Support defines `Date.current` to be today in the current time zone. That's like `Date.today`, except that it honors the user time zone, if defined. It also defines `Date.yesterday` and `Date.tomorrow`, and the instance predicates `past?`, `today?`, `tomorrow?`, `next_day?`, `yesterday?`, `prev_day?`, `future?`, `on_weekday?` and `on_weekend?`, all of them relative to `Date.current`.
 
 When making Date comparisons using methods which honor the user time zone, make sure to use `Date.current` and not `Date.today`. There are cases where the user time zone might be in the future compared to the system time zone, which `Date.today` uses by default. This means `Date.today` may equal `Date.yesterday`.
 
@@ -3429,7 +3456,7 @@ t.advance(seconds: 1)
 
 #### `Time.current`
 
-Active Support defines `Time.current` to be today in the current time zone. That's like `Time.now`, except that it honors the user time zone, if defined. It also defines the instance predicates `past?`, `today?`, and `future?`, all of them relative to `Time.current`.
+Active Support defines `Time.current` to be today in the current time zone. That's like `Time.now`, except that it honors the user time zone, if defined. It also defines the instance predicates `past?`, `today?`, `tomorrow?`, `next_day?`, `yesterday?`, `prev_day?` and `future?`, all of them relative to `Time.current`.
 
 When making Time comparisons using methods which honor the user time zone, make sure to use `Time.current` instead of `Time.now`. There are cases where the user time zone might be in the future compared to the system time zone, which `Time.now` uses by default. This means `Time.now.to_date` may equal `Date.yesterday`.
 
@@ -3635,7 +3662,7 @@ For example, when an action of `ArticlesController` is called Rails tries optimi
 
 ```ruby
 def default_helper_module!
-  module_name = name.sub(/Controller$/, '')
+  module_name = name.delete_suffix("Controller")
   module_path = module_name.underscore
   helper module_path
 rescue LoadError => e
@@ -3658,7 +3685,7 @@ For example, when an action of `ArticlesController` is called Rails tries to loa
 
 ```ruby
 def default_helper_module!
-  module_name = name.sub(/Controller$/, '')
+  module_name = name.delete_suffix("Controller")
   module_path = module_name.underscore
   helper module_path
 rescue LoadError => e

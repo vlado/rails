@@ -208,12 +208,78 @@ module ActiveRecord
 
   class DatabaseTasksDumpSchemaCacheTest < ActiveRecord::TestCase
     def test_dump_schema_cache
-      path = "/tmp/my_schema_cache.yml"
-      ActiveRecord::Tasks::DatabaseTasks.dump_schema_cache(ActiveRecord::Base.connection, path)
-      assert File.file?(path)
+      Dir.mktmpdir do |dir|
+        ActiveRecord::Tasks::DatabaseTasks.stub(:db_dir, dir) do
+          path = File.join(dir, "schema_cache.yml")
+          assert_not File.file?(path)
+          ActiveRecord::Tasks::DatabaseTasks.dump_schema_cache(ActiveRecord::Base.connection, path)
+          assert File.file?(path)
+        end
+      end
     ensure
       ActiveRecord::Base.clear_cache!
-      FileUtils.rm_rf(path)
+    end
+
+    def test_clear_schema_cache
+      Dir.mktmpdir do |dir|
+        ActiveRecord::Tasks::DatabaseTasks.stub(:db_dir, dir) do
+          path = File.join(dir, "schema_cache.yml")
+          File.open(path, "wb") do |f|
+            f.puts "This is a cache."
+          end
+          assert File.file?(path)
+          ActiveRecord::Tasks::DatabaseTasks.clear_schema_cache(path)
+          assert_not File.file?(path)
+        end
+      end
+    end
+
+    def test_cache_dump_default_filename
+      old_path = ENV["SCHEMA_CACHE"]
+      ENV.delete("SCHEMA_CACHE")
+
+      ActiveRecord::Tasks::DatabaseTasks.stub(:db_dir, "db") do
+        path = ActiveRecord::Tasks::DatabaseTasks.cache_dump_filename("primary")
+        assert_equal "db/schema_cache.yml", path
+      end
+    ensure
+      ENV["SCHEMA_CACHE"] = old_path
+    end
+
+    def test_cache_dump_alternate_filename
+      old_path = ENV["SCHEMA_CACHE"]
+      ENV.delete("SCHEMA_CACHE")
+
+      ActiveRecord::Tasks::DatabaseTasks.stub(:db_dir, "db") do
+        path = ActiveRecord::Tasks::DatabaseTasks.cache_dump_filename("alternate")
+        assert_equal "db/alternate_schema_cache.yml", path
+      end
+    ensure
+      ENV["SCHEMA_CACHE"] = old_path
+    end
+
+    def test_cache_dump_filename_with_env_override
+      old_path = ENV["SCHEMA_CACHE"]
+      ENV["SCHEMA_CACHE"] = "tmp/something.yml"
+
+      ActiveRecord::Tasks::DatabaseTasks.stub(:db_dir, "db") do
+        path = ActiveRecord::Tasks::DatabaseTasks.cache_dump_filename("primary")
+        assert_equal "tmp/something.yml", path
+      end
+    ensure
+      ENV["SCHEMA_CACHE"] = old_path
+    end
+
+    def test_cache_dump_filename_with_path_from_db_config
+      old_path = ENV["SCHEMA_CACHE"]
+      ENV.delete("SCHEMA_CACHE")
+
+      ActiveRecord::Tasks::DatabaseTasks.stub(:db_dir, "db") do
+        path = ActiveRecord::Tasks::DatabaseTasks.cache_dump_filename("primary", schema_cache_path: "tmp/something.yml")
+        assert_equal "tmp/something.yml", path
+      end
+    ensure
+      ENV["SCHEMA_CACHE"] = old_path
     end
   end
 
@@ -381,6 +447,29 @@ module ActiveRecord
       ENV["RAILS_ENV"] = old_env
     end
 
+    def test_creates_development_database_without_test_database_when_skip_test_database
+      old_env = ENV["RAILS_ENV"]
+      ENV["RAILS_ENV"] = "development"
+      ENV["SKIP_TEST_DATABASE"] = "true"
+
+      with_stubbed_configurations_establish_connection do
+        assert_called_with(
+          ActiveRecord::Tasks::DatabaseTasks,
+          :create,
+          [
+            [config_for("development", "primary")]
+          ],
+        ) do
+          ActiveRecord::Tasks::DatabaseTasks.create_current(
+            ActiveSupport::StringInquirer.new("development")
+          )
+        end
+      end
+    ensure
+      ENV["RAILS_ENV"] = old_env
+      ENV.delete("SKIP_TEST_DATABASE")
+    end
+
     def test_establishes_connection_for_the_given_environments
       ActiveRecord::Tasks::DatabaseTasks.stub(:create, nil) do
         assert_called_with(ActiveRecord::Base, :establish_connection, [:development]) do
@@ -392,8 +481,8 @@ module ActiveRecord
     end
 
     private
-      def config_for(env_name, spec_name)
-        ActiveRecord::Base.configurations.configs_for(env_name: env_name, spec_name: spec_name)
+      def config_for(env_name, name)
+        ActiveRecord::Base.configurations.configs_for(env_name: env_name, name: name)
       end
 
       def with_stubbed_configurations_establish_connection
@@ -509,8 +598,8 @@ module ActiveRecord
     end
 
     private
-      def config_for(env_name, spec_name)
-        ActiveRecord::Base.configurations.configs_for(env_name: env_name, spec_name: spec_name)
+      def config_for(env_name, name)
+        ActiveRecord::Base.configurations.configs_for(env_name: env_name, name: name)
       end
 
       def with_stubbed_configurations_establish_connection
@@ -700,8 +789,8 @@ module ActiveRecord
     end
 
     private
-      def config_for(env_name, spec_name)
-        ActiveRecord::Base.configurations.configs_for(env_name: env_name, spec_name: spec_name)
+      def config_for(env_name, name)
+        ActiveRecord::Base.configurations.configs_for(env_name: env_name, name: name)
       end
 
       def with_stubbed_configurations
@@ -801,8 +890,8 @@ module ActiveRecord
     end
 
     private
-      def config_for(env_name, spec_name)
-        ActiveRecord::Base.configurations.configs_for(env_name: env_name, spec_name: spec_name)
+      def config_for(env_name, name)
+        ActiveRecord::Base.configurations.configs_for(env_name: env_name, name: name)
       end
 
       def with_stubbed_configurations
@@ -839,25 +928,6 @@ module ActiveRecord
     end
 
     class DatabaseTasksMigrateTest < DatabaseTasksMigrationTestCase
-      def test_can_migrate_from_pending_migration_error_action_dispatch
-        verbose, version = ENV["VERBOSE"], ENV["VERSION"]
-        ENV["VERSION"] = "2"
-        ENV["VERBOSE"] = "false"
-
-        # run down migration because it was already run on copied db
-        assert_empty capture_migration_output
-
-        ENV.delete("VERSION")
-        ENV.delete("VERBOSE")
-
-        # re-run up migration
-        assert_includes(capture(:stdout) do
-          ActiveSupport::ActionableError.dispatch ActiveRecord::PendingMigrationError, "Run pending migrations"
-        end, "migrating")
-      ensure
-        ENV["VERBOSE"], ENV["VERSION"] = verbose, version
-      end
-
       def test_migrate_set_and_unset_empty_values_for_verbose_and_version_env_vars
         verbose, version = ENV["VERBOSE"], ENV["VERSION"]
 
@@ -1001,7 +1071,7 @@ module ActiveRecord
       assert_called_with(
         ActiveRecord::Tasks::DatabaseTasks,
         :purge,
-        [ActiveRecord::Base.configurations.configs_for(env_name: "production", spec_name: "primary")]
+        [ActiveRecord::Base.configurations.configs_for(env_name: "production", name: "primary")]
       ) do
         assert_called_with(ActiveRecord::Base, :establish_connection, [:production]) do
           ActiveRecord::Tasks::DatabaseTasks.purge_current("production")
@@ -1021,7 +1091,7 @@ module ActiveRecord
       assert_called_with(
         ActiveRecord::Tasks::DatabaseTasks,
         :purge,
-        [ActiveRecord::Base.configurations.configs_for(env_name: "development", spec_name: "primary")]
+        [ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "primary")]
       ) do
         ActiveRecord::Tasks::DatabaseTasks.purge_all
       end
@@ -1046,7 +1116,7 @@ module ActiveRecord
       def teardown
         SchemaMigration.delete_all
         InternalMetadata.delete_all
-        ActiveRecord::Base.connection_handlers = { writing: ActiveRecord::Base.default_connection_handler }
+        clean_up_connection_handler
       end
 
       def test_truncate_tables
@@ -1056,7 +1126,8 @@ module ActiveRecord
         assert_operator AuthorAddress.count, :>, 0
 
         old_configurations = ActiveRecord::Base.configurations
-        configurations = { development: ActiveRecord::Base.configurations["arunit"] }
+        db_config = ActiveRecord::Base.configurations.configs_for(env_name: "arunit", name: "primary")
+        configurations = { development: db_config.configuration_hash }
         ActiveRecord::Base.configurations = configurations
 
         ActiveRecord::Tasks::DatabaseTasks.stub(:root, nil) do
@@ -1190,8 +1261,8 @@ module ActiveRecord
     end
 
     private
-      def config_for(env_name, spec_name)
-        ActiveRecord::Base.configurations.configs_for(env_name: env_name, spec_name: spec_name)
+      def config_for(env_name, name)
+        ActiveRecord::Base.configurations.configs_for(env_name: env_name, name: name)
       end
 
       def with_stubbed_configurations
@@ -1228,7 +1299,7 @@ module ActiveRecord
       assert_called_with(
         ActiveRecord::Tasks::DatabaseTasks,
         :charset,
-        [ActiveRecord::Base.configurations.configs_for(env_name: "production", spec_name: "primary")]
+        [ActiveRecord::Base.configurations.configs_for(env_name: "production", name: "primary")]
       ) do
         ActiveRecord::Tasks::DatabaseTasks.charset_current("production", "primary")
       end
@@ -1261,7 +1332,7 @@ module ActiveRecord
       assert_called_with(
         ActiveRecord::Tasks::DatabaseTasks,
         :collation,
-        [ActiveRecord::Base.configurations.configs_for(env_name: "production", spec_name: "primary")]
+        [ActiveRecord::Base.configurations.configs_for(env_name: "production", name: "primary")]
       ) do
         ActiveRecord::Tasks::DatabaseTasks.collation_current("production", "primary")
       end

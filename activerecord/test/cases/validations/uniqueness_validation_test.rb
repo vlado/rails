@@ -156,6 +156,25 @@ class UniquenessValidationTest < ActiveRecord::TestCase
     assert r3.valid?, "Saving r3"
   end
 
+  def test_validate_uniqueness_with_aliases
+    Reply.validates_uniqueness_of(:new_content, scope: :new_parent_id)
+
+    t = Topic.create(title: "I'm unique!")
+
+    r1 = t.replies.create(title: "r1", content: "hello world")
+    assert_predicate r1, :valid?, "Saving r1"
+
+    r2 = t.replies.create(title: "r2", content: "hello world")
+    assert_not_predicate r2, :valid?, "Saving r2 first time"
+
+    r2.content = "something else"
+    assert r2.save, "Saving r2 second time"
+
+    t2 = Topic.create("title" => "I'm unique too!")
+    r3 = t2.replies.create(title: "r3", content: "hello world")
+    assert_predicate r3, :valid?, "Saving r3"
+  end
+
   def test_validate_uniqueness_with_scope_invalid_syntax
     error = assert_raises(ArgumentError) do
       Reply.validates_uniqueness_of(:content, scope: { parent_id: false })
@@ -501,6 +520,23 @@ class UniquenessValidationTest < ActiveRecord::TestCase
     assert_raises(ArgumentError) {
       Topic.validates_uniqueness_of :title, conditions: Topic.where(approved: true)
     }
+  end
+
+  def test_validate_uniqueness_with_conditions_with_record_arg
+    Topic.validates_uniqueness_of :title, conditions: ->(record) {
+      where(written_on: record.written_on.beginning_of_day..record.written_on.end_of_day)
+    }
+
+    today_midday = Time.current.midday
+
+    todays_topic = Topic.new(title: "Highlights of the Day", written_on: today_midday)
+    assert todays_topic.save, "1st topic written today with this title should save"
+
+    todays_topic_duplicate = Topic.new(title: "Highlights of the Day", written_on: today_midday + 1.minute)
+    assert todays_topic_duplicate.invalid?, "2nd topic written today with this title should be invalid"
+
+    tomorrows_topic = Topic.new(title: "Highlights of the Day", written_on: today_midday + 1.day)
+    assert tomorrows_topic.valid?, "1st topic written tomorrow with this title should be valid"
   end
 
   def test_validate_uniqueness_on_existing_relation

@@ -8,6 +8,7 @@ require "active_support/message_verifier"
 require "active_support/encrypted_configuration"
 require "active_support/deprecation"
 require "active_support/hash_with_indifferent_access"
+require "active_support/configuration_file"
 require "rails/engine"
 require "rails/secrets"
 
@@ -45,7 +46,7 @@ module Rails
   # process. From the moment you require "config/application.rb" in your app,
   # the booting process goes like this:
   #
-  #   1)  require "config/boot.rb" to setup load paths
+  #   1)  require "config/boot.rb" to set up load paths
   #   2)  require railties and engines
   #   3)  Define Rails.application as "class MyApp::Application < Rails::Application"
   #   4)  Run config.before_configuration callbacks
@@ -205,12 +206,13 @@ module Rails
 
     # Convenience for loading config/foo.yml for the current Rails env.
     #
-    # Example:
+    # Examples:
     #
     #     # config/exception_notification.yml:
     #     production:
     #       url: http://127.0.0.1:8080
     #       namespace: my_app_production
+    #
     #     development:
     #       url: http://localhost:3001
     #       namespace: my_app_development
@@ -219,12 +221,30 @@ module Rails
     #     Rails.application.configure do
     #       config.middleware.use ExceptionNotifier, config_for(:exception_notification)
     #     end
+    #
+    #     # You can also store configurations in a shared section which will be
+    #     # merged with the environment configuration
+    #
+    #     # config/example.yml
+    #     shared:
+    #       foo:
+    #         bar:
+    #           baz: 1
+    #
+    #     development:
+    #       foo:
+    #         bar:
+    #           qux: 2
+    #
+    #     # development environment
+    #     Rails.application.config_for(:example)[:foo][:bar]
+    #     # => { baz: 1, qux: 2 }
     def config_for(name, env: Rails.env)
       yaml = name.is_a?(Pathname) ? name : Pathname.new("#{paths["config"].existent.first}/#{name}.yml")
 
       if yaml.exist?
         require "erb"
-        all_configs    = YAML.load(ERB.new(yaml.read).result, symbolize_names: true) || {}
+        all_configs    = ActiveSupport::ConfigurationFile.parse(yaml, symbolize_names: true)
         config, shared = all_configs[env.to_sym], all_configs[:shared]
 
         if config.is_a?(Hash)
@@ -235,10 +255,6 @@ module Rails
       else
         raise "Could not load configuration. No such file - #{yaml}"
       end
-    rescue Psych::SyntaxError => error
-      raise "YAML syntax error occurred while parsing #{yaml}. " \
-        "Please note that YAML must be consistently indented using spaces. Tabs are not allowed. " \
-        "Error: #{error.message}"
     end
 
     # Stores some of the Rails initial environment parameters which
@@ -265,7 +281,7 @@ module Rails
           "action_dispatch.cookies_serializer" => config.action_dispatch.cookies_serializer,
           "action_dispatch.cookies_digest" => config.action_dispatch.cookies_digest,
           "action_dispatch.cookies_rotations" => config.action_dispatch.cookies_rotations,
-          "action_dispatch.cookies_same_site_protection" => config.action_dispatch.cookies_same_site_protection,
+          "action_dispatch.cookies_same_site_protection" => coerce_same_site_protection(config.action_dispatch.cookies_same_site_protection),
           "action_dispatch.use_cookies_with_metadata" => config.action_dispatch.use_cookies_with_metadata,
           "action_dispatch.content_security_policy" => config.content_security_policy,
           "action_dispatch.content_security_policy_report_only" => config.content_security_policy_report_only,
@@ -377,20 +393,6 @@ module Rails
 
     attr_writer :config
 
-    # Returns secrets added to config/secrets.yml.
-    #
-    # Example:
-    #
-    #     development:
-    #       secret_key_base: 836fa3665997a860728bcb9e9a1e704d427cfc920e79d847d79c8a9a907b9e965defa4154b2b86bdec6930adbe33f21364523a6f6ce363865724549fdfc08553
-    #     test:
-    #       secret_key_base: 5a37811464e7d378488b0f073e2193b093682e4e21f5d6f3ae0a4e1781e61a351fdc878a843424e81c73fb484a40d23f92c8dafac4870e74ede6e5e174423010
-    #     production:
-    #       secret_key_base: <%= ENV["SECRET_KEY_BASE"] %>
-    #       namespace: my_app_production
-    #
-    # +Rails.application.secrets.namespace+ returns +my_app_production+ in the
-    # production environment.
     def secrets
       @secrets ||= begin
         secrets = ActiveSupport::OrderedOptions.new
@@ -405,7 +407,7 @@ module Rails
       end
     end
 
-    attr_writer :secrets
+    attr_writer :secrets, :credentials
 
     # The secret_key_base is used as the input secret to the application's key generator, which in turn
     # is used to create all MessageVerifiers/MessageEncryptors, including the ones that sign and encrypt cookies.
@@ -497,13 +499,22 @@ module Rails
       ordered_railties.flatten - [self]
     end
 
+    # Eager loads the application code.
+    def eager_load!
+      if Rails.autoloaders.zeitwerk_enabled?
+        Rails.autoloaders.each(&:eager_load)
+      else
+        super
+      end
+    end
+
   protected
     alias :build_middleware_stack :app
 
     def run_tasks_blocks(app) #:nodoc:
       railties.each { |r| r.run_tasks_blocks(app) }
       super
-      require "rails/tasks"
+      load "rails/tasks.rb"
       task :environment do
         ActiveSupport.on_load(:before_initialize) { config.eager_load = config.rake_eager_load }
 
@@ -572,7 +583,7 @@ module Rails
       elsif secret_key_base
         raise ArgumentError, "`secret_key_base` for #{Rails.env} environment must be a type of String`"
       else
-        raise ArgumentError, "Missing `secret_key_base` for '#{Rails.env}' environment, set this string with `rails credentials:edit`"
+        raise ArgumentError, "Missing `secret_key_base` for '#{Rails.env}' environment, set this string with `bin/rails credentials:edit`"
       end
     end
 
@@ -602,6 +613,10 @@ module Rails
 
       def build_middleware
         config.app_middleware + super
+      end
+
+      def coerce_same_site_protection(protection)
+        protection.respond_to?(:call) ? protection : proc { protection }
       end
   end
 end

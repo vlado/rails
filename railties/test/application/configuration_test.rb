@@ -4,7 +4,6 @@ require "isolation/abstract_unit"
 require "rack/test"
 require "env_helpers"
 require "set"
-require "active_support/core_ext/string/starts_ends_with"
 
 class ::MyMailInterceptor
   def self.delivering_email(email); email; end
@@ -116,7 +115,7 @@ module ApplicationTests
         end
       RUBY
       add_to_top_of_config <<-RUBY
-        require 'my_logger'
+        require "my_logger"
         config.logger = MyLogger.new STDOUT
       RUBY
 
@@ -154,12 +153,25 @@ module ApplicationTests
 
       app "development"
 
-      ActiveRecord::Migrator.migrations_paths = ["#{app_path}/db/migrate"]
-
       begin
+        ActiveRecord::Migrator.migrations_paths = ["#{app_path}/db/migrate"]
+
         get "/foo"
         assert_equal 500, last_response.status
         assert_match "ActiveRecord::PendingMigrationError", last_response.body
+
+        assert_changes -> { File.exist?(File.join(app_path, "db", "schema.rb")) }, from: false, to: true do
+          output = capture(:stdout) do
+            post "/rails/actions", { error: "ActiveRecord::PendingMigrationError", action: "Run pending migrations", location: "/foo" }
+          end
+
+          assert_match(/\d{14}\s+CreateUser/, output)
+        end
+
+        assert_equal 302, last_response.status
+
+        get "/foo"
+        assert_equal 404, last_response.status
       ensure
         ActiveRecord::Migrator.migrations_paths = nil
       end
@@ -1320,7 +1332,7 @@ module ApplicationTests
       app "development"
 
       post "/posts.json", '{ "title": "foo", "name": "bar" }', "CONTENT_TYPE" => "application/json"
-      assert_equal '<ActionController::Parameters {"title"=>"foo"} permitted: false>', last_response.body
+      assert_equal '#<ActionController::Parameters {"title"=>"foo"} permitted: false>', last_response.body
     end
 
     test "config.action_controller.permit_all_parameters = true" do
@@ -1363,8 +1375,8 @@ module ApplicationTests
 
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
 
       assert_equal :raise, ActionController::Parameters.action_on_unpermitted_parameters
 
@@ -1375,8 +1387,8 @@ module ApplicationTests
     test "config.action_controller.always_permitted_parameters are: controller, action by default" do
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
 
       assert_equal %w(controller action), ActionController::Parameters.always_permitted_parameters
     end
@@ -1388,8 +1400,8 @@ module ApplicationTests
 
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
 
       assert_equal %w( controller action format ), ActionController::Parameters.always_permitted_parameters
     end
@@ -1413,8 +1425,8 @@ module ApplicationTests
 
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
 
       assert_equal :raise, ActionController::Parameters.action_on_unpermitted_parameters
 
@@ -1425,8 +1437,8 @@ module ApplicationTests
     test "config.action_controller.action_on_unpermitted_parameters is :log by default in development" do
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
 
       assert_equal :log, ActionController::Parameters.action_on_unpermitted_parameters
     end
@@ -1434,8 +1446,8 @@ module ApplicationTests
     test "config.action_controller.action_on_unpermitted_parameters is :log by default in test" do
       app "test"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
 
       assert_equal :log, ActionController::Parameters.action_on_unpermitted_parameters
     end
@@ -1443,8 +1455,8 @@ module ApplicationTests
     test "config.action_controller.action_on_unpermitted_parameters is false by default in production" do
       app "production"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
 
       assert_equal false, ActionController::Parameters.action_on_unpermitted_parameters
     end
@@ -1463,8 +1475,9 @@ module ApplicationTests
 
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
+
       assert_equal true, ActionController::Parameters.permit_all_parameters
     end
 
@@ -1475,8 +1488,9 @@ module ApplicationTests
 
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
+
       assert_equal [], ActionController::Parameters.always_permitted_parameters
     end
 
@@ -1487,8 +1501,9 @@ module ApplicationTests
 
       app "development"
 
-      force_lazy_load_hooks { ActionController::Base }
-      force_lazy_load_hooks { ActionController::API }
+      require "action_controller/base"
+      require "action_controller/api"
+
       assert_equal :raise, ActionController::Parameters.action_on_unpermitted_parameters
     end
 
@@ -1562,12 +1577,26 @@ module ApplicationTests
       assert_equal session_options, app.config.session_options
     end
 
+    test "config.log_level defaults to debug in development" do
+      restore_default_config
+      app "development"
+
+      assert_equal Logger::DEBUG, Rails.logger.level
+    end
+
+    test "config.log_level default to info in production" do
+      restore_default_config
+      app "production"
+
+      assert_equal Logger::INFO, Rails.logger.level
+    end
+
     test "config.log_level with custom logger" do
       make_basic_app do |application|
         application.config.logger = Logger.new(STDOUT)
-        application.config.log_level = :info
+        application.config.log_level = :debug
       end
-      assert_equal Logger::INFO, Rails.logger.level
+      assert_equal Logger::DEBUG, Rails.logger.level
     end
 
     test "respond_to? accepts include_private" do
@@ -1707,8 +1736,8 @@ module ApplicationTests
     test "autoload paths do not include asset paths" do
       app "development"
       ActiveSupport::Dependencies.autoload_paths.each do |path|
-        assert_not_operator path, :ends_with?, "app/assets"
-        assert_not_operator path, :ends_with?, "app/javascript"
+        assert_not_operator path, :end_with?, "app/assets"
+        assert_not_operator path, :end_with?, "app/javascript"
       end
     end
 
@@ -1719,8 +1748,8 @@ module ApplicationTests
       app "development"
 
       ActiveSupport::Dependencies.autoload_paths.each do |path|
-        assert_not_operator path, :ends_with?, "app/assets"
-        assert_not_operator path, :ends_with?, "app/webpack"
+        assert_not_operator path, :end_with?, "app/assets"
+        assert_not_operator path, :end_with?, "app/webpack"
       end
     end
 
@@ -1730,7 +1759,7 @@ module ApplicationTests
       # Action Mailer modifies AS::Dependencies.autoload_paths in-place.
       autoload_paths = ActiveSupport::Dependencies.autoload_paths
       autoload_paths_from_app_and_engines = autoload_paths.reject do |path|
-        path.ends_with?("mailers/previews")
+        path.end_with?("mailers/previews")
       end
       assert_equal true, Rails.configuration.add_autoload_paths_to_load_path
       assert_empty autoload_paths_from_app_and_engines - $LOAD_PATH
@@ -2118,26 +2147,21 @@ module ApplicationTests
       assert_equal :default, Rails.configuration.debug_exception_response_format
     end
 
-    test "controller force_ssl declaration can be used even if session_store is disabled" do
-      make_basic_app do |application|
-        application.config.session_store :disabled
-      end
+    test "ActiveRecord::Base.has_many_inversing is true by default for new apps" do
+      app "development"
 
-      class ::OmgController < ActionController::Base
-        force_ssl
-
-        def index
-          render plain: "Yay! You're on Rails!"
-        end
-      end
-
-      get "/"
-
-      assert_equal 301, last_response.status
-      assert_equal "https://example.org/", last_response.location
+      assert_equal true, ActiveRecord::Base.has_many_inversing
     end
 
-    test "ActiveSupport::MessageEncryptor.use_authenticated_message_encryption can be configured via config.active_support.use_authenticated_message_encryption" do
+    test "ActiveRecord::Base.has_many_inversing is false by default for upgraded apps" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app "development"
+
+      assert_equal false, ActiveRecord::Base.has_many_inversing
+    end
+
+    test "ActiveRecord::Base.has_many_inversing can be configured via config.active_record.has_many_inversing" do
       remove_from_config '.*config\.load_defaults.*\n'
 
       app_file "config/initializers/new_framework_defaults_6_1.rb", <<-RUBY
@@ -2163,6 +2187,18 @@ module ApplicationTests
       assert_equal false, ActiveSupport::MessageEncryptor.use_authenticated_message_encryption
     end
 
+    test "ActiveSupport::MessageEncryptor.use_authenticated_message_encryption can be configured via config.active_support.use_authenticated_message_encryption" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/new_framework_defaults_6_0.rb", <<-RUBY
+        Rails.application.config.active_support.use_authenticated_message_encryption = true
+      RUBY
+
+      app "development"
+
+      assert_equal true, ActiveSupport::MessageEncryptor.use_authenticated_message_encryption
+    end
+
     test "ActiveSupport::Digest.hash_digest_class is Digest::SHA1 by default for new apps" do
       app "development"
 
@@ -2177,6 +2213,30 @@ module ApplicationTests
       assert_equal Digest::MD5, ActiveSupport::Digest.hash_digest_class
     end
 
+    test "ActiveSupport::Digest.hash_digest_class can be configured via config.active_support.use_sha1_digests" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/new_framework_defaults_6_0.rb", <<-RUBY
+        Rails.application.config.active_support.use_sha1_digests = true
+      RUBY
+
+      app "development"
+
+      assert_equal Digest::SHA1, ActiveSupport::Digest.hash_digest_class
+    end
+
+    test "ActiveSupport::Digest.hash_digest_class can be configured via config.active_support.hash_digest_class" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/custom_digest_class.rb", <<-RUBY
+        Rails.application.config.active_support.hash_digest_class = Digest::SHA256
+      RUBY
+
+      app "development"
+
+      assert_equal Digest::SHA256, ActiveSupport::Digest.hash_digest_class
+    end
+
     test "custom serializers should be able to set via config.active_job.custom_serializers in an initializer" do
       class ::DummySerializer < ActiveJob::Serializers::ObjectSerializer; end
 
@@ -2189,6 +2249,18 @@ module ApplicationTests
       assert_includes ActiveJob::Serializers.serializers, DummySerializer
     end
 
+    test "active record job queue is set" do
+      app "development"
+
+      assert_equal ActiveSupport::InheritableOptions.new(destroy: :active_record_destroy), ActiveRecord::Base.queues
+    end
+
+    test "destroy association async job should be loaded in configs" do
+      app "development"
+
+      assert_equal ActiveRecord::DestroyAssociationAsyncJob, ActiveRecord::Base.destroy_association_async_job
+    end
+
     test "ActionView::Helpers::FormTagHelper.default_enforce_utf8 is false by default" do
       app "development"
       assert_equal false, ActionView::Helpers::FormTagHelper.default_enforce_utf8
@@ -2197,6 +2269,18 @@ module ApplicationTests
     test "ActionView::Helpers::FormTagHelper.default_enforce_utf8 is true in an upgraded app" do
       remove_from_config '.*config\.load_defaults.*\n'
       add_to_config 'config.load_defaults "5.2"'
+
+      app "development"
+
+      assert_equal true, ActionView::Helpers::FormTagHelper.default_enforce_utf8
+    end
+
+    test "ActionView::Helpers::FormTagHelper.default_enforce_utf8 can be configured via config.action_view.default_enforce_utf8" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/new_framework_defaults_6_0.rb", <<-RUBY
+        Rails.application.config.action_view.default_enforce_utf8 = true
+      RUBY
 
       app "development"
 
@@ -2224,10 +2308,17 @@ module ApplicationTests
       end
     end
 
-    test "ActiveJob::Base.retry_jitter is 0.15 by default" do
+    test "ActiveJob::Base.retry_jitter is 0.15 by default for new apps" do
       app "development"
 
       assert_equal 0.15, ActiveJob::Base.retry_jitter
+    end
+
+    test "ActiveJob::Base.retry_jitter is 0.0 by default for upgraded apps" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      app "development"
+
+      assert_equal 0.0, ActiveJob::Base.retry_jitter
     end
 
     test "ActiveJob::Base.retry_jitter can be set by config" do
@@ -2251,6 +2342,18 @@ module ApplicationTests
       app "development"
 
       assert_equal false, ActiveJob::Base.return_false_on_aborted_enqueue
+    end
+
+    test "ActiveJob::Base.return_false_on_aborted_enqueue can be configured in the new framework defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/new_framework_defaults_6_0.rb", <<-RUBY
+        Rails.application.config.active_job.return_false_on_aborted_enqueue = true
+      RUBY
+
+      app "development"
+
+      assert_equal true, ActiveJob::Base.return_false_on_aborted_enqueue
     end
 
     test "ActiveJob::Base.skip_after_callbacks_if_terminated is true by default" do
@@ -2295,6 +2398,59 @@ module ApplicationTests
       assert_equal :lax, Rails.application.config.action_dispatch.cookies_same_site_protection
     end
 
+    test "Rails.application.config.action_dispatch.ssl_default_redirect_status is 308 in 6.1 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "6.1"'
+
+      app "production"
+
+      assert_equal 308, Rails.application.config.action_dispatch.ssl_default_redirect_status
+    end
+
+    test "Rails.application.config.action_dispatch.ssl_default_redirect_status can be configured in an initializer" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "6.0"'
+
+      app_file "config/initializers/new_framework_defaults_6_1.rb", <<-RUBY
+        Rails.application.config.action_dispatch.ssl_default_redirect_status = 308
+      RUBY
+
+      app "production"
+
+      assert_equal 308, Rails.application.config.action_dispatch.ssl_default_redirect_status
+    end
+
+    test "ActiveSupport.utc_to_local_returns_utc_offset_times is true in 6.1 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "6.1"'
+
+      app "development"
+
+      assert_equal true, ActiveSupport.utc_to_local_returns_utc_offset_times
+    end
+
+    test "ActiveSupport.utc_to_local_returns_utc_offset_times is false in 6.0 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "6.0"'
+
+      app "development"
+
+      assert_equal false, ActiveSupport.utc_to_local_returns_utc_offset_times
+    end
+
+    test "ActiveSupport.utc_to_local_returns_utc_offset_times can be configured in an initializer" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "6.0"'
+
+      app_file "config/initializers/new_framework_defaults_6_1.rb", <<-RUBY
+        ActiveSupport.utc_to_local_returns_utc_offset_times = true
+      RUBY
+
+      app "development"
+
+      assert_equal true, ActiveSupport.utc_to_local_returns_utc_offset_times
+    end
+
     test "ActiveStorage.queues[:analysis] is :active_storage_analysis by default" do
       app "development"
 
@@ -2336,6 +2492,18 @@ module ApplicationTests
       app "development"
 
       assert_equal true, ActionDispatch::Response.return_only_media_type_on_content_type
+    end
+
+    test "ActionDispatch::Response.return_only_media_type_on_content_type can be configured in the new framework defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/new_framework_defaults_6_0.rb", <<-RUBY
+        Rails.application.config.action_dispatch.return_only_media_type_on_content_type = false
+      RUBY
+
+      app "development"
+
+      assert_equal false, ActionDispatch::Response.return_only_media_type_on_content_type
     end
 
     test "ActionMailbox.logger is Rails.logger by default" do
@@ -2424,6 +2592,18 @@ module ApplicationTests
       assert_equal ActionMailer::DeliveryJob, ActionMailer::Base.delivery_job
     end
 
+    test "ActionMailer::Base.delivery_job can be configured in the new framework defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/new_framework_defaults_6_0.rb", <<-RUBY
+        Rails.application.config.action_mailer.delivery_job = "ActionMailer::MailDeliveryJob"
+      RUBY
+
+      app "development"
+
+      assert_equal ActionMailer::MailDeliveryJob, ActionMailer::Base.delivery_job
+    end
+
     test "ActiveRecord::Base.filter_attributes should equal to filter_parameters" do
       app_file "config/initializers/filter_parameters_logging.rb", <<-RUBY
         Rails.application.config.filter_parameters += [ :password, :credit_card_number ]
@@ -2441,13 +2621,17 @@ module ApplicationTests
       RUBY
 
       output = rails("routes", "-g", "active_storage")
-      assert_match <<~MESSAGE, output
-                           Prefix Verb URI Pattern                                                               Controller#Action
-               rails_service_blob GET  /files/blobs/:signed_id/*filename(.:format)                               active_storage/blobs#show
-        rails_blob_representation GET  /files/representations/:signed_blob_id/:variation_key/*filename(.:format) active_storage/representations#show
-               rails_disk_service GET  /files/disk/:encoded_key/*filename(.:format)                              active_storage/disk#show
-        update_rails_disk_service PUT  /files/disk/:encoded_token(.:format)                                      active_storage/disk#update
-             rails_direct_uploads POST /files/direct_uploads(.:format)                                           active_storage/direct_uploads#create
+      assert_equal <<~MESSAGE, output
+                               Prefix Verb URI Pattern                                                                        Controller#Action
+                   rails_service_blob GET  /files/blobs/redirect/:signed_id/*filename(.:format)                               active_storage/blobs/redirect#show
+             rails_service_blob_proxy GET  /files/blobs/proxy/:signed_id/*filename(.:format)                                  active_storage/blobs/proxy#show
+                                      GET  /files/blobs/:signed_id/*filename(.:format)                                        active_storage/blobs/redirect#show
+            rails_blob_representation GET  /files/representations/redirect/:signed_blob_id/:variation_key/*filename(.:format) active_storage/representations/redirect#show
+      rails_blob_representation_proxy GET  /files/representations/proxy/:signed_blob_id/:variation_key/*filename(.:format)    active_storage/representations/proxy#show
+                                      GET  /files/representations/:signed_blob_id/:variation_key/*filename(.:format)          active_storage/representations/redirect#show
+                   rails_disk_service GET  /files/disk/:encoded_key/*filename(.:format)                                       active_storage/disk#show
+            update_rails_disk_service PUT  /files/disk/:encoded_token(.:format)                                               active_storage/disk#update
+                 rails_direct_uploads POST /files/direct_uploads(.:format)                                                    active_storage/direct_uploads#create
       MESSAGE
     end
 
@@ -2503,11 +2687,13 @@ module ApplicationTests
       assert_equal true, Rails.application.config.rake_eager_load
     end
 
-    private
-      def force_lazy_load_hooks
-        yield # Tasty clarifying sugar, homie! We only need to reference a constant to load it.
-      end
+    test "unknown_asset_fallback is false by default" do
+      app "development"
 
+      assert_equal false, Rails.application.config.assets.unknown_asset_fallback
+    end
+
+    private
       def set_custom_config(contents, config_source = "custom".inspect)
         app_file "config/custom.yml", contents
 

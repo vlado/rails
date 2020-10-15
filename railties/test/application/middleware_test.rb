@@ -145,7 +145,7 @@ module ApplicationTests
       add_to_config "config.ssl_options = { redirect: { host: 'example.com' } }"
       boot!
 
-      assert_equal [{ redirect: { host: "example.com" } }], Rails.application.middleware[2].args
+      assert_equal [{ redirect: { host: "example.com" }, ssl_default_redirect_status: 308 }], Rails.application.middleware[2].args
     end
 
     test "removing Active Record omits its middleware" do
@@ -239,9 +239,10 @@ module ApplicationTests
     end
 
     test "Rails.cache does not respond to middleware" do
-      add_to_config "config.cache_store = :memory_store"
+      add_to_config "config.cache_store = :memory_store, { timeout: 10 }"
       boot!
       assert_equal "Rack::Runtime", middleware[5]
+      assert_instance_of ActiveSupport::Cache::MemoryStore, Rails.cache
     end
 
     test "Rails.cache does respond to middleware" do

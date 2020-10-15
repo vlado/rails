@@ -405,7 +405,7 @@ The comments resource here will have the following routes generated for it:
 | PATCH/PUT | /comments/:id(.:format)                      | comments#update   | sekret_comment_path         |
 | DELETE    | /comments/:id(.:format)                      | comments#destroy  | sekret_comment_path         |
 
-### Routing concerns
+### Routing Concerns
 
 Routing concerns allow you to declare common routes that can be reused inside other resources and routes. To define a concern:
 
@@ -448,7 +448,7 @@ namespace :articles do
 end
 ```
 
-### Creating Paths and URLs From Objects
+### Creating Paths and URLs from Objects
 
 In addition to using the routing helpers, Rails can also create paths and URLs from an array of parameters. For example, suppose you have this set of routes:
 
@@ -592,7 +592,7 @@ TIP: By default, dynamic segments don't accept dots - this is because the dot is
 
 ### Static Segments
 
-You can specify static segments when creating a route by not prepending a colon to a fragment:
+You can specify static segments when creating a route by not prepending a colon to a segment:
 
 ```ruby
 get 'photos/:id/with_user/:user_id', to: 'photos#show'
@@ -640,10 +640,11 @@ get 'exit', to: 'sessions#destroy', as: :logout
 
 This will create `logout_path` and `logout_url` as named route helpers in your application. Calling `logout_path` will return `/exit`
 
-You can also use this to override routing methods defined by resources, like this:
+You can also use this to override routing methods defined by resources by placing custom routes before the resource is defined, like this:
 
 ```ruby
 get ':username', to: 'users#show', as: :user
+resources :users
 ```
 
 This will define a `user_path` method that will be available in controllers, helpers, and views that will go to a route such as `/bob`. Inside the `show` action of `UsersController`, `params[:username]` will contain the username for the user. Change `:username` in the route definition if you do not want your parameter name to be `:username`.
@@ -686,7 +687,7 @@ get 'photos/:id', to: 'photos#show', id: /[A-Z]\d{5}/
 get '/:id', to: 'articles#show', constraints: { id: /^\d/ }
 ```
 
-However, note that you don't need to use anchors because all routes are anchored at the start.
+However, note that you don't need to use anchors because all routes are anchored at the start and the end.
 
 For example, the following routes would allow for `articles` with `to_param` values like `1-hello-world` that always begin with a number and `users` with `to_param` values like `david` that never begin with a number to share the root namespace:
 
@@ -715,7 +716,7 @@ namespace :admin do
 end
 ```
 
-NOTE: Request constraints work by calling a method on the [Request object](action_controller_overview.html#the-request-object) with the same name as the hash key and then compare the return value with the hash value. Therefore, constraint values should match the corresponding Request object method return type. For example: `constraints: { subdomain: 'api' }` will match an `api` subdomain as expected, however using a symbol `constraints: { subdomain: :api }` will not, because `request.subdomain` returns `'api'` as a String.
+NOTE: Request constraints work by calling a method on the [Request object](action_controller_overview.html#the-request-object) with the same name as the hash key and then comparing the return value with the hash value. Therefore, constraint values should match the corresponding Request object method return type. For example: `constraints: { subdomain: 'api' }` will match an `api` subdomain as expected. However, using a symbol `constraints: { subdomain: :api }` will not, because `request.subdomain` returns `'api'` as a String.
 
 NOTE: There is an exception for the `format` constraint: while it's a method on the Request object, it's also an implicit optional parameter on every path. Segment constraints take precedence and the `format` constraint is only applied as such when enforced through a hash. For example, `get 'foo', constraints: { format: 'json' }` will match `GET  /foo` because the format is optional by default. However, you can [use a lambda](#advanced-constraints) like in `get 'foo', constraints: lambda { |req| req.format == :json }` and the route will only match explicit JSON requests.
 
@@ -751,6 +752,35 @@ end
 
 Both the `matches?` method and the lambda gets the `request` object as an argument.
 
+#### Constraints in a block form
+
+You can specify constraints in a block form. This is useful for when you need to apply the same rule to several routes. For example
+
+```
+class RestrictedListConstraint
+  # ...Same as the example above
+end
+
+Rails.application.routes.draw do
+  constraints(RestrictedListConstraint.new) do
+    get '*path', to: 'restricted_list#index',
+    get '*other-path', to: 'other_restricted_list#index',
+  end
+end
+```
+
+You also use a `lambda`:
+
+```
+Rails.application.routes.draw do
+  constraints(lambda { |request| RestrictedList.retrieve_ips.include?(request.remote_ip) }) do
+    get '*path', to: 'restricted_list#index',
+    get '*other-path', to: 'other_restricted_list#index',
+  end
+end
+```
+
+
 ### Route Globbing and Wildcard Segments
 
 Route globbing is a way to specify that a particular parameter should be matched to all the remaining parts of a route. For example:
@@ -759,7 +789,7 @@ Route globbing is a way to specify that a particular parameter should be matched
 get 'photos/*other', to: 'photos#unknown'
 ```
 
-This route would match `photos/12` or `/photos/long/path/to/12`, setting `params[:other]` to `"12"` or `"long/path/to/12"`. The fragments prefixed with a star are called "wildcard segments".
+This route would match `photos/12` or `/photos/long/path/to/12`, setting `params[:other]` to `"12"` or `"long/path/to/12"`. The segments prefixed with a star are called "wildcard segments".
 
 Wildcard segments can occur anywhere in a route. For example:
 
@@ -868,7 +898,7 @@ end
 root to: "home#index"
 ```
 
-### Unicode character routes
+### Unicode Character Routes
 
 You can specify unicode character routes directly. For example:
 
@@ -876,7 +906,7 @@ You can specify unicode character routes directly. For example:
 get 'こんにちは', to: 'welcome#index'
 ```
 
-### Direct routes
+### Direct Routes
 
 You can create custom URL helpers directly. For example:
 
@@ -1151,7 +1181,7 @@ edit_video GET  /videos/:identifier/edit(.:format) videos#edit
 Video.find_by(identifier: params[:identifier])
 ```
 
-You can override `ActiveRecord::Base#to_param` of a related model to construct
+You can override `ActiveRecord::Base#to_param` of the associated model to construct
 a URL:
 
 ```ruby
@@ -1191,7 +1221,7 @@ end
 
 Calling `draw(:admin)` inside the `Rails.application.routes.draw` block itself will try to load a route
 file that has the same name as the argument given (`admin.rb` in this case).
-The file need to be located inside the `config/routes` directory or any sub-directory (i.e. `config/routes/admin.rb` , `config/routes/external/admin.rb`).
+The file needs to be located inside the `config/routes` directory or any sub-directory (i.e. `config/routes/admin.rb` or `config/routes/external/admin.rb`).
 
 You can use the normal routing DSL inside the `admin.rb` routing file, **however** you shouldn't surround it with the `Rails.application.routes.draw` block like you did in the main `config/routes.rb` file.
 
@@ -1209,7 +1239,7 @@ Rails offers facilities for inspecting and testing your routes.
 
 ### Listing Existing Routes
 
-To get a complete list of the available routes in your application, visit `http://localhost:3000/rails/info/routes` in your browser while your server is running in the **development** environment. You can also execute the `rails routes` command in your terminal to produce the same output.
+To get a complete list of the available routes in your application, visit `http://localhost:3000/rails/info/routes` in your browser while your server is running in the **development** environment. You can also execute the `bin/rails routes` command in your terminal to produce the same output.
 
 Both methods will list all of your routes, in the same order that they appear in `config/routes.rb`. For each route, you'll see:
 
@@ -1218,7 +1248,7 @@ Both methods will list all of your routes, in the same order that they appear in
 * The URL pattern to match
 * The routing parameters for the route
 
-For example, here's a small section of the `rails routes` output for a RESTful route:
+For example, here's a small section of the `bin/rails routes` output for a RESTful route:
 
 ```
     users GET    /users(.:format)          users#index
@@ -1229,8 +1259,8 @@ edit_user GET    /users/:id/edit(.:format) users#edit
 
 You can also use the `--expanded` option to turn on the expanded table formatting mode.
 
-```
-$ rails routes --expanded
+```bash
+$ bin/rails routes --expanded
 
 --[ Route 1 ]----------------------------------------------------
 Prefix            | users
@@ -1256,22 +1286,22 @@ Controller#Action | users#edit
 
 You can search through your routes with the grep option: -g. This outputs any routes that partially match the URL helper method name, the HTTP verb, or the URL path.
 
-```
-$ rails routes -g new_comment
-$ rails routes -g POST
-$ rails routes -g admin
+```bash
+$ bin/rails routes -g new_comment
+$ bin/rails routes -g POST
+$ bin/rails routes -g admin
 ```
 
 If you only want to see the routes that map to a specific controller, there's the -c option.
 
-```
-$ rails routes -c users
-$ rails routes -c admin/users
-$ rails routes -c Comments
-$ rails routes -c Articles::CommentsController
+```bash
+$ bin/rails routes -c users
+$ bin/rails routes -c admin/users
+$ bin/rails routes -c Comments
+$ bin/rails routes -c Articles::CommentsController
 ```
 
-TIP: You'll find that the output from `rails routes` is much more readable if you widen your terminal window until the output lines don't wrap.
+TIP: You'll find that the output from `bin/rails routes` is much more readable if you widen your terminal window until the output lines don't wrap.
 
 ### Testing Routes
 

@@ -10,7 +10,10 @@ module ActionDispatch
         @options = options[:options] || {}
         @capabilities = capabilities
 
-        @browser.preload unless name == :rack_test
+        if name == :selenium
+          require "selenium/webdriver"
+          @browser.preload
+        end
       end
 
       def use
@@ -41,7 +44,7 @@ module ActionDispatch
         end
 
         def register_selenium(app)
-          Capybara::Selenium::Driver.new(app, { browser: @browser.type }.merge(browser_options)).tap do |driver|
+          Capybara::Selenium::Driver.new(app, **{ browser: @browser.type }.merge(browser_options)).tap do |driver|
             driver.browser.manage.window.size = Selenium::WebDriver::Dimension.new(*@screen_size)
           end
         end

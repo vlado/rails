@@ -8,6 +8,8 @@ class CodeStatistics #:nodoc:
                 "Helper tests",
                 "Model tests",
                 "Mailer tests",
+                "Mailbox tests",
+                "Channel tests",
                 "Job tests",
                 "Integration tests",
                 "System tests"]
@@ -38,7 +40,7 @@ class CodeStatistics #:nodoc:
       Hash[@pairs.map { |pair| [pair.first, calculate_directory_statistics(pair.last)] }]
     end
 
-    def calculate_directory_statistics(directory, pattern = /^(?!\.).*?\.(rb|js|coffee|rake)$/)
+    def calculate_directory_statistics(directory, pattern = /^(?!\.).*?\.(rb|js|ts|coffee|rake)$/)
       stats = CodeStatisticsCalculator.new
 
       Dir.foreach(directory) do |file_name|
@@ -73,7 +75,7 @@ class CodeStatistics #:nodoc:
     end
 
     def width_for(label)
-      [@statistics.values.sum { |s| s.send(label) }.to_s.size, HEADERS[label].length].max
+      [@statistics.values.sum { |s| s.public_send(label) }.to_s.size, HEADERS[label].length].max
     end
 
     def print_header

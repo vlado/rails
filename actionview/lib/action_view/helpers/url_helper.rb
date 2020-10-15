@@ -412,8 +412,7 @@ module ActionView
       # Creates a link tag of the given +name+ using a URL created by the set of
       # +options+ if +condition+ is true, otherwise only the name is
       # returned. To specialize the default behavior, you can pass a block that
-      # accepts the name or the full argument list for +link_to_unless+ (see the examples
-      # in +link_to_unless+).
+      # accepts the name or the full argument list for +link_to_if+.
       #
       # ==== Examples
       #   <%= link_to_if(@current_user.nil?, "Login", { controller: "sessions", action: "new" }) %>
@@ -550,14 +549,14 @@ module ActionView
         return false unless request.get? || request.head?
 
         check_parameters ||= options.is_a?(Hash) && options.delete(:check_parameters)
-        url_string = URI.parser.unescape(url_for(options)).force_encoding(Encoding::BINARY)
+        url_string = URI::DEFAULT_PARSER.unescape(url_for(options)).force_encoding(Encoding::BINARY)
 
         # We ignore any extra parameters in the request_uri if the
         # submitted URL doesn't have any either. This lets the function
         # work with things like ?order=asc
         # the behaviour can be disabled with check_parameters: true
         request_uri = url_string.index("?") || check_parameters ? request.fullpath : request.path
-        request_uri = URI.parser.unescape(request_uri).force_encoding(Encoding::BINARY)
+        request_uri = URI::DEFAULT_PARSER.unescape(request_uri).force_encoding(Encoding::BINARY)
 
         if url_string.start_with?("/") && url_string != "/"
           url_string.chomp!("/")

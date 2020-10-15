@@ -114,14 +114,7 @@ module ActiveRecord
     #   Person.first(3) # returns the first three objects fetched by SELECT * FROM people ORDER BY people.id LIMIT 3
     #
     def first(limit = nil)
-      if !order_values.empty? && order_values.all?(&:blank?)
-        blank_value = order_values.first
-        ActiveSupport::Deprecation.warn(<<~MSG.squish)
-          `.reorder(#{blank_value.inspect})` with `.first` / `.first!` no longer
-          takes non-deterministic result in Rails 6.2.
-          To continue taking non-deterministic result, use `.take` / `.take!` instead.
-        MSG
-      end
+      check_reorder_deprecation unless loaded?
 
       if limit
         find_nth_with_limit(0, limit)
@@ -284,9 +277,9 @@ module ActiveRecord
     # * Integer - Finds the record with this primary key.
     # * String - Finds the record with a primary key corresponding to this
     #   string (such as <tt>'5'</tt>).
-    # * Array - Finds the record that matches these +find+-style conditions
+    # * Array - Finds the record that matches these +where+-style conditions
     #   (such as <tt>['name LIKE ?', "%#{query}%"]</tt>).
-    # * Hash - Finds the record that matches these +find+-style conditions
+    # * Hash - Finds the record that matches these +where+-style conditions
     #   (such as <tt>{name: 'David'}</tt>).
     # * +false+ - Returns always +false+.
     # * No args - Returns +false+ if the relation is empty, +true+ otherwise.
@@ -323,8 +316,23 @@ module ActiveRecord
 
       relation = construct_relation_for_exists(conditions)
 
-      skip_query_cache_if_necessary { connection.select_one(relation.arel, "#{name} Exists?") } ? true : false
+      skip_query_cache_if_necessary { connection.select_rows(relation.arel, "#{name} Exists?").size == 1 }
     end
+
+    # Returns true if the relation contains the given record or false otherwise.
+    #
+    # No query is performed if the relation is loaded; the given record is
+    # compared to the records in memory. If the relation is unloaded, an
+    # efficient existence query is performed, as in #exists?.
+    def include?(record)
+      if loaded? || offset_value || limit_value
+        records.include?(record)
+      else
+        record.is_a?(klass) && exists?(record.id)
+      end
+    end
+
+    alias :member? :include?
 
     # This method is called whenever no records are found with either a single
     # id or multiple ids and raises an ActiveRecord::RecordNotFound exception.
@@ -335,15 +343,15 @@ module ActiveRecord
     # the expected number of results should be provided in the +expected_size+
     # argument.
     def raise_record_not_found_exception!(ids = nil, result_size = nil, expected_size = nil, key = primary_key, not_found_ids = nil) # :nodoc:
-      conditions = arel.where_sql(@klass)
-      conditions = " [#{conditions}]" if conditions
+      conditions = " [#{arel.where_sql(klass)}]" unless where_clause.empty?
+
       name = @klass.name
 
       if ids.nil?
         error = +"Couldn't find #{name}"
         error << " with#{conditions}" if conditions
         raise RecordNotFound.new(error, name, key)
-      elsif Array(ids).size == 1
+      elsif Array.wrap(ids).size == 1
         error = "Couldn't find #{name} with '#{key}'=#{ids}#{conditions}"
         raise RecordNotFound.new(error, name, key, ids)
       else
@@ -355,8 +363,15 @@ module ActiveRecord
     end
 
     private
-      def offset_index
-        offset_value || 0
+      def check_reorder_deprecation
+        if !order_values.empty? && order_values.all?(&:blank?)
+          blank_value = order_values.first
+          ActiveSupport::Deprecation.warn(<<~MSG.squish)
+            `.reorder(#{blank_value.inspect})` with `.first` / `.first!` no longer
+            takes non-deterministic result in Rails 6.2.
+            To continue taking non-deterministic result, use `.take` / `.take!` instead.
+          MSG
+        end
       end
 
       def construct_relation_for_exists(conditions)
@@ -380,7 +395,7 @@ module ActiveRecord
 
       def apply_join_dependency(eager_loading: group_values.empty?)
         join_dependency = construct_join_dependency(
-          eager_load_values + includes_values, Arel::Nodes::OuterJoin
+          eager_load_values | includes_values, Arel::Nodes::OuterJoin
         )
         relation = except(:includes, :eager_load, :preload).joins!(join_dependency)
 
@@ -410,14 +425,14 @@ module ActiveRecord
 
       def limited_ids_for(relation)
         values = @klass.connection.columns_for_distinct(
-          connection.visitor.compile(arel_attribute(primary_key)),
+          connection.visitor.compile(table[primary_key]),
           relation.order_values
         )
 
         relation = relation.except(:select).select(values).distinct!
 
-        id_rows = skip_query_cache_if_necessary { @klass.connection.select_all(relation.arel, "SQL") }
-        id_rows.map { |row| row[primary_key] }
+        id_rows = skip_query_cache_if_necessary { @klass.connection.select_rows(relation.arel, "SQL") }
+        id_rows.map(&:last)
       end
 
       def using_limitable_reflections?(reflections)
@@ -518,7 +533,8 @@ module ActiveRecord
       end
 
       def find_nth(index)
-        @offsets[offset_index + index] ||= find_nth_with_limit(index, 1).first
+        @offsets ||= {}
+        @offsets[index] ||= find_nth_with_limit(index, 1).first
       end
 
       def find_nth_with_limit(index, limit)
@@ -532,7 +548,7 @@ module ActiveRecord
           end
 
           if limit > 0
-            relation = relation.offset(offset_index + index) unless index.zero?
+            relation = relation.offset((offset_value || 0) + index) unless index.zero?
             relation.limit(limit).to_a
           else
             []
@@ -561,9 +577,9 @@ module ActiveRecord
       def ordered_relation
         if order_values.empty? && (implicit_order_column || primary_key)
           if implicit_order_column && primary_key && implicit_order_column != primary_key
-            order(arel_attribute(implicit_order_column).asc, arel_attribute(primary_key).asc)
+            order(table[implicit_order_column].asc, table[primary_key].asc)
           else
-            order(arel_attribute(implicit_order_column || primary_key).asc)
+            order(table[implicit_order_column || primary_key].asc)
           end
         else
           self

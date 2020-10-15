@@ -153,7 +153,7 @@ class ResponseTest < ActiveSupport::TestCase
   end
 
   test "content length" do
-    [100, 101, 102, 204].each do |c|
+    [100, 101, 102, 103, 204].each do |c|
       @response = ActionDispatch::Response.new
       @response.status = c.to_s
       @response.set_header "Content-Length", "0"
@@ -163,7 +163,7 @@ class ResponseTest < ActiveSupport::TestCase
   end
 
   test "does not contain a message-body" do
-    [100, 101, 102, 204, 304].each do |c|
+    [100, 101, 102, 103, 204, 304].each do |c|
       @response = ActionDispatch::Response.new
       @response.status = c.to_s
       @response.body = "Body must not be included"
@@ -238,7 +238,7 @@ class ResponseTest < ActiveSupport::TestCase
     @response.set_cookie("user_name", value: "david", path: "/")
     @response.set_cookie("login", value: "foo&bar", path: "/", expires: Time.utc(2005, 10, 10, 5))
     _status, headers, _body = @response.to_a
-    assert_equal "user_name=david; path=/\nlogin=foo%26bar; path=/; expires=Mon, 10 Oct 2005 05:00:00 -0000", headers["Set-Cookie"]
+    assert_equal "user_name=david; path=/\nlogin=foo%26bar; path=/; expires=Mon, 10 Oct 2005 05:00:00 GMT", headers["Set-Cookie"]
     assert_equal({ "login" => "foo&bar", "user_name" => "david" }, @response.cookies)
   end
 
@@ -293,6 +293,17 @@ class ResponseTest < ActiveSupport::TestCase
     assert_equal(Mime[:xml], resp.media_type)
     assert_equal("application/xml; charset=utf-16", resp.content_type)
     assert_equal("application/xml; charset=utf-16", resp.headers["Content-Type"])
+  end
+
+  test "respect no-store cache-control" do
+    resp = ActionDispatch::Response.new.tap { |response|
+      response.cache_control[:public] = true
+      response.cache_control[:no_store] = true
+      response.body = "Hello"
+    }
+    resp.to_a
+
+    assert_equal("no-store", resp.headers["Cache-Control"])
   end
 
   test "read content type with default charset utf-8" do

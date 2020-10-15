@@ -33,16 +33,17 @@ passing the `--skip-sprockets` option.
 $ rails new appname --skip-sprockets
 ```
 
-Rails automatically adds the `sass-rails` gem to your `Gemfile`, which is used
-by Sprockets for asset compression:
+Rails automatically adds the [`sass-rails`](https://github.com/rails/sass-rails)
+gem to your `Gemfile`, which is used by Sprockets for
+[Sass](https://sass-lang.com) compilation:
 
 ```ruby
 gem 'sass-rails'
 ```
 
 Using the `--skip-sprockets` option will prevent Rails from adding
-them to your `Gemfile`, so if you later want to enable
-the asset pipeline you will have to add those gems to your `Gemfile`. Also,
+this gem, so if you later want to enable the asset pipeline
+you will have to add it to your `Gemfile` manually. Also,
 creating an application with the `--skip-sprockets` option will generate
 a slightly different `config/application.rb` file, with a require statement
 for the sprockets railtie that is commented-out. You will have to remove
@@ -472,8 +473,8 @@ which contains these lines:
 */
 ```
 
-Rails create `app/assets/stylesheets/application.css` regardless of whether the
---skip-sprockets option is used when creating a new Rails application. This is
+Rails creates `app/assets/stylesheets/application.css` regardless of whether the
+`--skip-sprockets` option is used when creating a new Rails application. This is
 so you can easily add asset pipelining later if you like.
 
 The directives that work in JavaScript files also work in stylesheets
@@ -509,17 +510,16 @@ might concatenate three CSS files together this way:
 ### Preprocessing
 
 The file extensions used on an asset determine what preprocessing is applied.
-When a controller or a scaffold is generated with the default Rails gemset, a
-CoffeeScript file and a SCSS file are generated in place of a regular JavaScript
-and CSS file. The example used before was a controller called "projects", which
-generated an `app/assets/stylesheets/projects.scss` file.
+When a controller or a scaffold is generated with the default Rails gemset, an
+SCSS file is generated in place of a regular CSS file. The example used before
+was a controller called "projects", which generated an
+`app/assets/stylesheets/projects.scss` file.
 
-In development mode, or if the asset pipeline is disabled, when these files are
-requested they are processed by the processors provided by the `coffee-script`
-and `sass` gems and then sent back to the browser as JavaScript and CSS
-respectively. When asset pipelining is enabled, these files are preprocessed and
-placed in the `public/assets` directory for serving by either the Rails app or
-web server.
+In development mode, or if the asset pipeline is disabled, when this file is
+requested it is processed by the processor provided by the `sass-rails` gem and
+then sent back to the browser as CSS. When asset pipelining is enabled, this
+file is preprocessed and placed in the `public/assets` directory for serving by
+either the Rails app or web server.
 
 Additional layers of preprocessing can be requested by adding other extensions,
 where each extension is processed in a right-to-left manner. These should be
@@ -898,7 +898,7 @@ You can also set this value through an [environment
 variable](https://en.wikipedia.org/wiki/Environment_variable) to make running a
 staging copy of your site easier:
 
-```
+```ruby
 config.action_controller.asset_host = ENV['CDN_HOST']
 ```
 
@@ -1013,7 +1013,7 @@ the cache will store the object before invalidating the cache. The `max-age`
 value is set to seconds with a maximum possible value of `31536000` which is one
 year. You can do this in your Rails application by setting
 
-```
+```ruby
 config.public_file_server.headers = {
   'Cache-Control' => 'public, max-age=31536000'
 }

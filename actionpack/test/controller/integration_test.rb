@@ -170,9 +170,10 @@ end
 class IntegrationTestUsesCorrectClass < ActionDispatch::IntegrationTest
   def test_integration_methods_called
     reset!
+    headers = { "Origin" => "*" }
 
-    %w( get post head patch put delete ).each do |verb|
-      assert_nothing_raised { __send__(verb, "/") }
+    %w( get post head patch put delete options ).each do |verb|
+      assert_nothing_raised { __send__(verb, "/", headers: headers) }
     end
   end
 end
@@ -232,6 +233,10 @@ class IntegrationProcessTest < ActionDispatch::IntegrationTest
 
     def redirect_307
       redirect_to action_url("post"), status: 307
+    end
+
+    def redirect_308
+      redirect_to action_url("post"), status: 308
     end
 
     def remove_header
@@ -362,6 +367,15 @@ class IntegrationProcessTest < ActionDispatch::IntegrationTest
     with_test_route_set do
       post "/redirect_307"
       assert_equal 307, status
+      follow_redirect!
+      assert_equal "POST", request.method
+    end
+  end
+
+  def test_308_redirect_uses_the_same_http_verb
+    with_test_route_set do
+      post "/redirect_308"
+      assert_equal 308, status
       follow_redirect!
       assert_equal "POST", request.method
     end
@@ -704,6 +718,12 @@ class MetalIntegrationTest < ActionDispatch::IntegrationTest
 end
 
 class ApplicationIntegrationTest < ActionDispatch::IntegrationTest
+  class MetalController < ActionController::Metal
+    def new
+      self.status = 200
+    end
+  end
+
   class TestController < ActionController::Base
     def index
       render plain: "index"
@@ -733,6 +753,8 @@ class ApplicationIntegrationTest < ActionDispatch::IntegrationTest
 
   routes.draw do
     get "",    to: "application_integration_test/test#index", as: :empty_string
+
+    get "metal", to: "application_integration_test/metal#new", as: :new_metal
 
     get "foo", to: "application_integration_test/test#index", as: :foo
     get "bar", to: "application_integration_test/test#index", as: :bar
@@ -771,6 +793,11 @@ class ApplicationIntegrationTest < ActionDispatch::IntegrationTest
 
     get "/bar"
     assert_equal "/bar", bar_path
+  end
+
+  test "route helpers after metal controller access" do
+    get "/metal"
+    assert_equal "/foo?q=solution", foo_path(q: "solution")
   end
 
   test "missing route helper before controller access" do
@@ -1191,7 +1218,7 @@ class IntegrationFileUploadTest < ActionDispatch::IntegrationTest
     self.class
   end
 
-  def self.fixture_path
+  def self.file_fixture_path
     File.expand_path("../fixtures/multipart", __dir__)
   end
 

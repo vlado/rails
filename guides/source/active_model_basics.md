@@ -17,8 +17,8 @@ After reading this guide, you will know:
 
 --------------------------------------------------------------------------------
 
-Introduction
-------------
+What is Active Model?
+---------------------
 
 Active Model is a library containing various modules used in developing
 classes that need some features present on Active Record.
@@ -397,13 +397,13 @@ more human-readable format. The human-readable format is defined in your locale 
 
 * config/locales/app.pt-BR.yml
 
-  ```yml
-  pt-BR:
-    activemodel:
-      attributes:
-        person:
-          name: 'Nome'
-  ```
+```yaml
+pt-BR:
+  activemodel:
+    attributes:
+      person:
+        name: 'Nome'
+```
 
 ```ruby
 Person.human_attribute_name('name') # => "Nome"
@@ -425,7 +425,7 @@ the Active Model API.
 * `test/models/person_test.rb`
 
     ```ruby
-    require 'test_helper'
+    require "test_helper"
 
     class PersonTest < ActiveSupport::TestCase
       include ActiveModel::Lint::Tests
@@ -437,7 +437,7 @@ the Active Model API.
     ```
 
 ```bash
-$ rails test
+$ bin/rails test
 
 Run options: --seed 14596
 

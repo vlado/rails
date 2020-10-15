@@ -37,15 +37,15 @@ module Arel # :nodoc: all
     def between(other)
       if unboundable?(other.begin) == 1 || unboundable?(other.end) == -1
         self.in([])
-      elsif other.begin.nil? || open_ended?(other.begin)
-        if other.end.nil? || open_ended?(other.end)
+      elsif open_ended?(other.begin)
+        if open_ended?(other.end)
           not_in([])
         elsif other.exclude_end?
           lt(other.end)
         else
           lteq(other.end)
         end
-      elsif other.end.nil? || open_ended?(other.end)
+      elsif open_ended?(other.end)
         gteq(other.begin)
       elsif other.exclude_end?
         gteq(other.begin).and(lt(other.end))
@@ -60,13 +60,6 @@ module Arel # :nodoc: all
       case other
       when Arel::SelectManager
         Arel::Nodes::In.new(self, other.ast)
-      when Range
-        if $VERBOSE
-          warn <<-eowarn
-Passing a range to `#in` is deprecated. Call `#between`, instead.
-          eowarn
-        end
-        between(other)
       when Enumerable
         Nodes::In.new self, quoted_array(other)
       else
@@ -85,15 +78,15 @@ Passing a range to `#in` is deprecated. Call `#between`, instead.
     def not_between(other)
       if unboundable?(other.begin) == 1 || unboundable?(other.end) == -1
         not_in([])
-      elsif other.begin.nil? || open_ended?(other.begin)
-        if other.end.nil? || open_ended?(other.end)
+      elsif open_ended?(other.begin)
+        if open_ended?(other.end)
           self.in([])
         elsif other.exclude_end?
           gteq(other.end)
         else
           gt(other.end)
         end
-      elsif other.end.nil? || open_ended?(other.end)
+      elsif open_ended?(other.end)
         lt(other.begin)
       else
         left = lt(other.begin)
@@ -110,13 +103,6 @@ Passing a range to `#in` is deprecated. Call `#between`, instead.
       case other
       when Arel::SelectManager
         Arel::Nodes::NotIn.new(self, other.ast)
-      when Range
-        if $VERBOSE
-          warn <<-eowarn
-Passing a range to `#not_in` is deprecated. Call `#not_between`, instead.
-          eowarn
-        end
-        not_between(other)
       when Enumerable
         Nodes::NotIn.new self, quoted_array(other)
       else
@@ -220,6 +206,18 @@ Passing a range to `#not_in` is deprecated. Call `#not_between`, instead.
       Nodes::Concat.new self, other
     end
 
+    def contains(other)
+      Arel::Nodes::Contains.new(self, other)
+    end
+
+    def overlaps(other)
+      Arel::Nodes::Overlaps.new(self, other)
+    end
+
+    def quoted_array(others)
+      others.map { |v| quoted_node(v) }
+    end
+
     private
       def grouping_any(method_id, others, *extras)
         nodes = others.map { |expr| send(method_id, expr, *extras) }
@@ -237,10 +235,6 @@ Passing a range to `#not_in` is deprecated. Call `#not_between`, instead.
         Nodes.build_quoted(other, self)
       end
 
-      def quoted_array(others)
-        others.map { |v| quoted_node(v) }
-      end
-
       def infinity?(value)
         value.respond_to?(:infinite?) && value.infinite?
       end
@@ -250,7 +244,7 @@ Passing a range to `#not_in` is deprecated. Call `#not_between`, instead.
       end
 
       def open_ended?(value)
-        infinity?(value) || unboundable?(value)
+        value.nil? || infinity?(value) || unboundable?(value)
       end
   end
 end

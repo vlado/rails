@@ -9,14 +9,14 @@ incorporate real-time features into your Rails application.
 After reading this guide, you will know:
 
 * What Action Cable is and its integration backend and frontend
-* How to setup Action Cable
-* How to setup channels
+* How to set up Action Cable
+* How to set up channels
 * Deployment and Architecture setup for running Action Cable
 
 --------------------------------------------------------------------------------
 
-Introduction
-------------
+What is Action Cable?
+---------------------
 
 Action Cable seamlessly integrates
 [WebSockets](https://en.wikipedia.org/wiki/WebSocket) with the rest of your
@@ -30,35 +30,40 @@ choice.
 Terminology
 -----------
 
+Action Cable uses WebSockets instead of the HTTP request-response protocol.
+Both Action Cable and WebSockets introduce some less familiar terminology:
+
+### Connections
+
+*Connections* form the foundation of the client-server relationship.
 A single Action Cable server can handle multiple connection instances. It has one
 connection instance per WebSocket connection. A single user may have multiple
 WebSockets open to your application if they use multiple browser tabs or devices.
-The client of a WebSocket connection is called the consumer.
 
-Each consumer can in turn subscribe to multiple cable channels. Each channel
+### Consumers
+
+The client of a WebSocket connection is called the *consumer*. In Action Cable
+the consumer is created by the client-side JavaScript framework.
+
+### Channels
+
+Each consumer can in turn subscribe to multiple *channels*. Each channel
 encapsulates a logical unit of work, similar to what a controller does in
 a regular MVC setup. For example, you could have a `ChatChannel` and
 an `AppearancesChannel`, and a consumer could be subscribed to either
 or to both of these channels. At the very least, a consumer should be subscribed
 to one channel.
 
-When the consumer is subscribed to a channel, they act as a subscriber.
+### Subscribers
+
+When the consumer is subscribed to a channel, they act as a *subscriber*.
 The connection between the subscriber and the channel is, surprise-surprise,
 called a subscription. A consumer can act as a subscriber to a given channel
 any number of times. For example, a consumer could subscribe to multiple chat rooms
 at the same time. (And remember that a physical user may have multiple consumers,
 one per tab/device open to your connection).
 
-Each channel can then again be streaming zero or more broadcastings.
-A broadcasting is a pubsub link where anything transmitted by the broadcaster is
-sent directly to the channel subscribers who are streaming that named broadcasting.
-
-As you can see, this is a fairly deep architectural stack. There's a lot of new
-terminology to identify the new pieces, and on top of that, you're dealing
-with both client and server side reflections of each unit.
-
-What is Pub/Sub
----------------
+### Pub/Sub
 
 [Pub/Sub](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern), or
 Publish-Subscribe, refers to a message queue paradigm whereby senders of
@@ -66,12 +71,17 @@ information (publishers), send data to an abstract class of recipients
 (subscribers), without specifying individual recipients. Action Cable uses this
 approach to communicate between the server and many clients.
 
+### Broadcastings
+
+A broadcasting is a pub/sub link where anything transmitted by the broadcaster is
+sent directly to the channel subscribers who are streaming that named broadcasting.
+Each channel can be streaming zero or more broadcastings.
+
 ## Server-Side Components
 
 ### Connections
 
-*Connections* form the foundation of the client-server relationship. For every
-WebSocket accepted by the server, a connection object is instantiated. This
+For every WebSocket accepted by the server, a connection object is instantiated. This
 object becomes the parent of all the *channel subscriptions* that are created
 from there on. The connection itself does not deal with any specific application
 logic beyond authentication and authorization. The client of a WebSocket
@@ -123,8 +133,31 @@ or unauthorized).
 If your authentication approach includes using a session, you use cookie store for the
 session, your session cookie is named `_session` and the user ID key is `user_id` you
 can use this approach:
+
 ```ruby
-  verified_user = User.find_by(id: cookies.encrypted['_session']['user_id'])
+verified_user = User.find_by(id: cookies.encrypted['_session']['user_id'])
+```
+
+#### Exception Handling
+
+By default, unhandled exceptions are caught and logged to Rails' logger. If you would like to
+globally intercept these exceptions and report them to an external bug tracking service, for
+example, you can do so with
+[`rescue_from`](https://api.rubyonrails.org/classes/ActiveSupport/Rescuable/ClassMethods.html#method-i-rescue_from).
+
+```ruby
+# app/channels/application_cable/connection.rb
+module ApplicationCable
+  class Connection < ActionCable::Connection::Base
+    rescue_from StandardError, with: :report_error
+
+    private
+
+    def report_error(e)
+      SomeExternalBugtrackingService.notify(e)
+    end
+  end
+end
 ```
 
 ### Channels
@@ -162,7 +195,7 @@ A consumer could then be subscribed to either or both of these channels.
 
 Consumers subscribe to channels, acting as *subscribers*. Their connection is
 called a *subscription*. Produced messages are then routed to these channel
-subscriptions based on an identifier sent by the cable consumer.
+subscriptions based on an identifier sent by the channel consumer.
 
 ```ruby
 # app/channels/chat_channel.rb
@@ -170,6 +203,24 @@ class ChatChannel < ApplicationCable::Channel
   # Called when the consumer has successfully
   # become a subscriber to this channel.
   def subscribed
+  end
+end
+```
+
+#### Exception Handling
+
+As with `ActionCable::Connection::Base`, you can also use `rescue_from` on a
+specific channel to handle raised exceptions:
+
+```ruby
+# app/channels/chat_channel.rb
+class ChatChannel < ApplicationCable::Channel
+  rescue_from 'MyError', with: :deliver_error_message
+
+  private
+
+  def deliver_error_message(e)
+    broadcast_to(...)
   end
 end
 ```
@@ -186,7 +237,7 @@ established using the following JavaScript, which is generated by default by Rai
 ```js
 // app/javascript/channels/consumer.js
 // Action Cable provides the framework to deal with WebSockets in Rails.
-// You can generate new channels where WebSocket features live using the `rails generate channel` command.
+// You can generate new channels where WebSocket features live using the `bin/rails generate channel` command.
 
 import { createConsumer } from "@rails/actioncable"
 
@@ -249,7 +300,9 @@ consumer.subscriptions.create({ channel: "ChatChannel", room: "2nd Room" })
 ### Streams
 
 *Streams* provide the mechanism by which channels route published content
-(broadcasts) to their subscribers.
+(broadcasts) to their subscribers. The following example would
+subscribe to the broadcasting `chat_Best Room` if the room parameter
+is `Best Room`:
 
 ```ruby
 # app/channels/chat_channel.rb
@@ -261,8 +314,9 @@ end
 ```
 
 If you have a stream that is related to a model, then the broadcasting used
-can be generated from the model and channel. The following example would
-subscribe to a broadcasting like `comments:Z2lkOi8vVGVzdEFwcC9Qb3N0LzE`
+can be generated from the channel and model. The following example would
+subscribe to a broadcasting like `comments:Z2lkOi8vVGVzdEFwcC9Qb3N0LzE`,
+where `Z2lkOi8vVGVzdEFwcC9Qb3N0LzE` is the GlobalID of the Post model.
 
 ```ruby
 class CommentsChannel < ApplicationCable::Channel
@@ -626,7 +680,7 @@ and unpacked for the data argument arriving as `received`.
 ### More Complete Examples
 
 See the [rails/actioncable-examples](https://github.com/rails/actioncable-examples)
-repository for a full example of how to setup Action Cable in a Rails app and adding channels.
+repository for a full example of how to set up Action Cable in a Rails app and adding channels.
 
 ## Configuration
 
@@ -710,6 +764,17 @@ connections as you have workers. The default worker pool size is set to 4, so
 that means you have to make at least 4 database connections available.
  You can change that in `config/database.yml` through the `pool` attribute.
 
+### Client side logging
+
+Client side logging is disabled by default. You can enable this by setting the `ActionCable.logger.enabled` to true.
+
+```ruby
+import * as ActionCable from '@rails/actioncable'
+
+ActionCable.logger.enabled = true
+```
+
+
 ### Other Configurations
 
 The other common option to configure is the log tags applied to the
@@ -758,7 +823,7 @@ basic setup is as follows:
 
 ```ruby
 # cable/config.ru
-require_relative '../config/environment'
+require_relative "../config/environment"
 Rails.application.eager_load!
 
 run ActionCable.server

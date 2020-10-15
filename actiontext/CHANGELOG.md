@@ -1,4 +1,32 @@
-*   The `fill_in_rich_text_area` system test helper locates a Trix editor and fills it in with the given HTML:
+*   Locate `fill_in_rich_text_area` by `<label>` text
+
+    In addition to searching for `<trix-editor>` elements with the appropriate
+    `aria-label` attribute, also support locating elements that match the
+    corresponding `<label>` element's text.
+
+    *Sean Doyle*
+
+*   Be able to add a default value to `rich_text_area`.
+
+    ```ruby
+    form.rich_text_area :content, value: "<h1>Hello world</h1>"
+    #=> <input type="hidden" name="message[content]" id="message_content_trix_input_message_1" value="<h1>Hello world</h1>">
+    ```
+
+    *Paulo Ancheta*
+
+*   Add method to confirm rich text content existence by adding `?` after rich
+    text attribute.
+
+    ```ruby
+    message = Message.create!(body: "<h1>Funny times!</h1>")
+    message.body? #=> true
+    ```
+
+    *Kyohei Toyoda*
+
+*   The `fill_in_rich_text_area` system test helper locates a Trix editor
+    and fills it in with the given HTML.
 
     ```ruby
     # <trix-editor id="message_content" ...></trix-editor>

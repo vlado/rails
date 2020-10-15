@@ -66,9 +66,13 @@ module Rails
       template "gitignore", ".gitignore"
     end
 
+    def gitattributes
+      template "gitattributes", ".gitattributes"
+    end
+
     def version_control
       if !options[:skip_git] && !options[:pretend]
-        run "git init", capture: options[:quiet]
+        run "git init", capture: options[:quiet], abort_on_failure: false
       end
     end
 
@@ -79,7 +83,7 @@ module Rails
     def app
       directory "app"
 
-      keep_file "app/assets/images"
+      empty_directory_with_keep_file "app/assets/images"
 
       keep_file  "app/controllers/concerns"
       keep_file  "app/models/concerns"
@@ -98,6 +102,16 @@ module Rails
       if options[:skip_javascript]
         remove_file "bin/yarn"
       end
+    end
+
+    def yarn_when_updating
+      return if File.exist?("bin/yarn")
+
+      template "bin/yarn" do |content|
+        "#{shebang}\n" + content
+      end
+
+      chmod "bin", 0755 & ~File.umask, verbose: false
     end
 
     def config
@@ -262,6 +276,9 @@ module Rails
       class_option :api, type: :boolean,
                          desc: "Preconfigure smaller stack for API only apps"
 
+      class_option :minimal, type: :boolean,
+                             desc: "Preconfigure a minimal rails app"
+
       class_option :skip_bundle, type: :boolean, aliases: "-B", default: false,
                                  desc: "Don't run bundle install"
 
@@ -284,6 +301,29 @@ module Rails
           self.options = options.merge(skip_sprockets: true, skip_javascript: true).freeze
         end
 
+        if options[:minimal]
+          self.options = options.merge(
+            skip_action_cable: true,
+            skip_action_mailer: true,
+            skip_action_mailbox: true,
+            skip_action_text: true,
+            skip_active_job: true,
+            skip_active_storage: true,
+            skip_bootsnap: true,
+            skip_dev_gems: true,
+            skip_javascript: true,
+            skip_jbuilder: true,
+            skip_spring: true,
+            skip_system_test: true,
+            skip_webpack_install: true,
+            skip_turbolinks: true).tap do |option|
+              if option[:webpack]
+                option[:skip_webpack_install] = false
+                option[:skip_javascript] = false
+              end
+            end.freeze
+        end
+
         @after_bundle_callbacks = []
       end
 
@@ -295,8 +335,13 @@ module Rails
         build(:rakefile)
         build(:ruby_version)
         build(:configru)
-        build(:gitignore)   unless options[:skip_git]
-        build(:gemfile)     unless options[:skip_gemfile]
+
+        unless options[:skip_git]
+          build(:gitignore)
+          build(:gitattributes)
+        end
+
+        build(:gemfile) unless options[:skip_gemfile]
         build(:version_control)
         build(:package_json) unless options[:skip_javascript]
       end
@@ -314,9 +359,14 @@ module Rails
       end
       remove_task :update_bin_files
 
+      def update_bin_yarn
+        build(:yarn_when_updating)
+      end
+      remove_task :update_bin_yarn
+
       def update_active_storage
         unless skip_active_storage?
-          rails_command "active_storage:update"
+          rails_command "active_storage:update", inline: true
         end
       end
       remove_task :update_active_storage
@@ -426,8 +476,15 @@ module Rails
       end
 
       def delete_js_folder_skipping_javascript
-        if options[:skip_javascript]
+        if options[:skip_javascript] && !options[:minimal]
           remove_dir "app/javascript"
+        end
+      end
+
+      def delete_js_packs_when_minimal_skipping_webpack
+        if options[:minimal] && options[:skip_webpack_install]
+          remove_dir "app/javascript/packs"
+          keep_file  "app/javascript"
         end
       end
 
@@ -440,6 +497,12 @@ module Rails
       def delete_application_record_skipping_active_record
         if options[:skip_active_record]
           remove_file "app/models/application_record.rb"
+        end
+      end
+
+      def delete_active_job_folder_if_skipping_active_job
+        if options[:skip_active_job]
+          remove_dir "app/jobs"
         end
       end
 
@@ -489,7 +552,7 @@ module Rails
       end
 
       public_task :apply_rails_template, :run_bundle
-      public_task :generate_bundler_binstub, :generate_spring_binstubs
+      public_task :generate_bundler_binstub, :generate_spring_binstub
       public_task :run_webpack
 
       def run_after_bundle_callbacks

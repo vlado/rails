@@ -7,6 +7,10 @@ module ActiveRecord
   class ActiveRecordError < StandardError
   end
 
+  # Raised when trying to use a feature in Active Record which requires Active Job but the gem is not present.
+  class ActiveJobRequiredError < ActiveRecordError
+  end
+
   # Raised when the single-table inheritance mechanism fails to locate the subclass
   # (for example due to improper usage of column that
   # {ActiveRecord::Base.inheritance_column}[rdoc-ref:ModelSchema::ClassMethods#inheritance_column]
@@ -51,6 +55,19 @@ module ActiveRecord
   # {ActiveRecord::Base.connection=}[rdoc-ref:ConnectionHandling#connection]
   # is given a +nil+ object).
   class ConnectionNotEstablished < ActiveRecordError
+  end
+
+  # Raised when a connection could not be obtained within the connection
+  # acquisition timeout period: because max connections in pool
+  # are in use.
+  class ConnectionTimeoutError < ConnectionNotEstablished
+  end
+
+  # Raised when a pool was unable to get ahold of all its connections
+  # to perform a "group" action such as
+  # {ActiveRecord::Base.connection_pool.disconnect!}[rdoc-ref:ConnectionAdapters::ConnectionPool#disconnect!]
+  # or {ActiveRecord::Base.clear_reloadable_connections!}[rdoc-ref:ConnectionAdapters::ConnectionHandler#clear_reloadable_connections!].
+  class ExclusiveConnectionTimeoutError < ConnectionTimeoutError
   end
 
   # Raised when a write to the database is attempted on a read only connection.
@@ -173,9 +190,9 @@ module ActiveRecord
   class RangeError < StatementInvalid
   end
 
-  # Raised when number of bind variables in statement given to +:condition+ key
-  # (for example, when using {ActiveRecord::Base.find}[rdoc-ref:FinderMethods#find] method)
-  # does not match number of expected values supplied.
+  # Raised when the number of placeholders in an SQL fragment passed to
+  # {ActiveRecord::Base.where}[rdoc-ref:QueryMethods#where]
+  # does not match the number of values supplied.
   #
   # For example, when there are two placeholders with only one value supplied:
   #
@@ -226,6 +243,10 @@ module ActiveRecord
 
   # Raised on attempt to update record that is instantiated as read only.
   class ReadOnlyRecord < ActiveRecordError
+  end
+
+  # Raised on attempt to lazily load records that are marked as strict loading.
+  class StrictLoadingViolationError < ActiveRecordError
   end
 
   # {ActiveRecord::Base.transaction}[rdoc-ref:Transactions::ClassMethods#transaction]
