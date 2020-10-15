@@ -307,17 +307,6 @@ module ActiveRecord
     # SQL is given as an illustration; the actual query generated may be different depending on
     # the database adapter.
     #
-    # === string
-    #
-    # A string is passed to the query as an SQL fragment, and used in the with statement of the query.
-    #
-    #   Post.with("posts_with_tags AS (SELECT * FROM posts WHERE tags_count > 0)")
-    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE tags_count > 0) SELECT * FROM posts
-    #
-    # Note that building your own string from user input may expose your application
-    # to injection attacks if not done properly. As an alternative, it is recommended
-    # to use the following method.
-    #
     # === hash
     #
     # #with will also accept a hash, in which the keys are results names and values are expressions that
@@ -1369,7 +1358,6 @@ module ActiveRecord
         recursive = with_values.delete(:recursive)
         with_statements = with_values.map do |with_value|
           case with_value
-          when String then Arel::Nodes::SqlLiteral.new(with_value)
           when Arel::Nodes::As then with_value
           when Array
             raise ArgumentError, "Unsupported argument type: #{with_value} #{with_value.class}" unless with_value.map(&:class).uniq == [Arel::Nodes::As]
