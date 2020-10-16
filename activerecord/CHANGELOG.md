@@ -1,4 +1,5 @@
-*   `.with` query method added which makes it super easy to build complex queries with common table expressions
+*   `.with` and `.with_recursive` query methods added. Construct common table
+     expressions with ease and get `ActiveRecord::Relation` back.
 
     *Vlado Cingel*
 

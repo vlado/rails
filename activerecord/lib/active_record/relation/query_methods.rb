@@ -332,14 +332,23 @@ module ActiveRecord
     #
     #   Post.with(posts_with_tags: Post.where("tags_count > ?", 0).joins("JOIN posts_with_tags ON posts_with_tags.id = posts.id")
     #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts JOIN posts_with_tags ON posts_with_tags.id = posts.id
-    def with(opts, *rest)
+    def with(opts)
       return self if opts.blank?
 
-      spawn.with!(opts, *rest)
+      spawn.with!(opts)
     end
 
-    def with!(opts, *rest)
-      self.with_values += [opts] + rest
+    # Works same as `.with` but it adds `RECURSIVE` modifier to the query.
+    # Using RECURSIVE, a WITH query can refer to its own output.
+    def with_recursive(opts)
+      return self if opts.blank?
+
+      spawn.with!(opts, recursive: true)
+    end
+
+    def with!(opts, recursive: false)
+      self.with_values += [opts]
+      self.with_values += [:recursive] if recursive
       self
     end
 

@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require "cases/helper"
+require "models/comment"
 require "models/post"
 
 module ActiveRecord
   class WithTest < ActiveRecord::TestCase
+    fixtures :comments
     fixtures :posts
 
     def test_with_when_hash_is_passed_as_an_argument
@@ -68,15 +70,20 @@ module ActiveRecord
       assert_equal posts_with_tags_and_comments.to_a, actual
     end
 
-    def test_recursive_with_call
-      posts = Arel::Table.new(:posts)
-      top_posts = Arel::Table.new(:top_posts)
+    def test_with_recursive_call
+      comment = Comment.last
+      first_reply = Comment.create!(body: "First reply", parent: comment, post: comment.post)
+      second_reply = Comment.create!(body: "Second reply", parent: comment, post: comment.post)
 
-      anchor_term = posts.project(posts[:id]).where(posts[:legacy_comments_count].gt(1))
-      recursive_term = posts.project(posts[:id]).join(top_posts).on(posts[:id].eq(top_posts[:id]))
+      union = %{
+        SELECT comments.id, comments.parent_id FROM comments WHERE comments.id = #{comment.id}
+        UNION
+        SELECT comments.id, comments.parent_id FROM comments INNER JOIN replies ON comments.parent_id = replies.id
+      }
+      thread = Comment.with_recursive(replies: union).from("replies AS comments").order(:created_at)
 
-      rel = Post.with(:recursive, top_posts: anchor_term.union(recursive_term)).from("top_posts AS posts")
-      assert_equal Post.select(:id).where("legacy_comments_count > 1").to_a, rel
+      assert thread.to_sql.start_with?("WITH RECURSIVE")
+      assert_equal [comment.id, first_reply.id, second_reply.id], thread.pluck(:id)
     end
 
     def test_count_after_with_call
