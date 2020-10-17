@@ -1390,7 +1390,7 @@ module ActiveRecord
                        when Arel::SelectManager, Arel::Nodes::Union then value
                        else
                          raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
-                       end
+          end
           Arel::Nodes::As.new(table, expression)
         end
       end
