@@ -1368,31 +1368,35 @@ module ActiveRecord
         with_statements = with_values.map do |with_value|
           case with_value
           when Arel::Nodes::As then with_value
-          when Array
-            raise ArgumentError, "Unsupported argument type: #{with_value} #{with_value.class}" unless with_value.map(&:class).uniq == [Arel::Nodes::As]
-
-            with_value
-          when Hash then
-            with_value.map do |name, value|
-              table = Arel::Table.new(name)
-              expression = case value
-                           when String then Arel::Nodes::SqlLiteral.new("(#{value})")
-                           when ActiveRecord::Relation then value.arel
-                           when Arel::SelectManager, Arel::Nodes::Union then value
-                           else
-                             raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
-              end
-              Arel::Nodes::As.new(table, expression)
-            end
+          when Array then build_with_value_from_array(with_value)
+          when Hash then build_with_value_from_hash(with_value)
           else
             raise ArgumentError, "Unsupported argument type: #{with_value} #{with_value.class}"
           end
         end
 
-        if recursive
-          arel.with(:recursive, with_statements)
-        else
-          arel.with(with_statements)
+        recursive ?  arel.with(:recursive, with_statements) : arel.with(with_statements)
+      end
+
+      def build_with_value_from_array(array)
+        unless array.map(&:class).uniq == [Arel::Nodes::As]
+          raise ArgumentError, "Unsupported argument type: #{array} #{array.class}"
+        end
+
+        array
+      end
+
+      def build_with_value_from_hash(hash)
+        hash.map do |name, value|
+          table = Arel::Table.new(name)
+          expression = case value
+                       when String then Arel::Nodes::SqlLiteral.new("(#{value})")
+                       when ActiveRecord::Relation then value.arel
+                       when Arel::SelectManager, Arel::Nodes::Union then value
+                       else
+                         raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
+                       end
+          Arel::Nodes::As.new(table, expression)
         end
       end
 
