@@ -303,14 +303,9 @@ module ActiveRecord
     # Returns a new relation, which adds Common Table Expression that you can then reference
     # within another SELECT, INSERT, UPDATE or DELETE statement.
     #
-    # #with accepts expressions in one of several formats. In the examples below, the resulting
-    # SQL is given as an illustration; the actual query generated may be different depending on
-    # the database adapter.
-    #
-    # === hash
-    #
-    # #with will also accept a hash, in which the keys are results names and values are expressions that
-    # will return those results.
+    # #with accepts a hash, in which the keys are results names and values are expressions that
+    # will return those results. In the examples below, the resulting SQL is given as an illustration;
+    # the actual query generated may be different depending on the database adapter.
     #
     # Keys can be symbols or strings. Values can be `String` or `ActiveRecord::Relation`.
     #

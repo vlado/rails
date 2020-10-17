@@ -1,6 +1,29 @@
 *   `.with` and `.with_recursive` query methods added. Construct common table
      expressions with ease and get `ActiveRecord::Relation` back.
 
+    Before:
+
+    ```ruby
+    posts_with_comments_table = Arel::Table.new(:posts_with_comments)
+    posts_with_comments_expression = Post.arel_table.where(posts_with_comments_table[:comments_count].gt(0))
+    posts_with_tags_table = Arel::Table.new(:posts_with_tags)
+    posts_with_tags_expression = Post.arel_table.where(posts_with_tags_table[:tags_count].gt(0))
+
+    Post.all.arel.with([
+      Arel::Nodes::As.new(posts_with_comments_table, posts_with_comments_expression),
+      Arel::Nodes::As.new(posts_with_tags_table, posts_with_tags_expression)
+    ])
+    ```
+
+    After:
+
+    ```ruby
+    Post.with(
+      posts_with_comments: Post.where("comments_count > ?", 0),
+      posts_with_tags: Post.where("tags_count > ?", 0)
+    )
+    ```
+
     *Vlado Cingel*
 
 *   Support passing record to uniqueness validator `:conditions` callable:
