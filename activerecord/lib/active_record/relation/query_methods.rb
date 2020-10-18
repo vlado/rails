@@ -328,22 +328,18 @@ module ActiveRecord
     #   Post.with(posts_with_tags: Post.where("tags_count > ?", 0).joins("JOIN posts_with_tags ON posts_with_tags.id = posts.id")
     #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts JOIN posts_with_tags ON posts_with_tags.id = posts.id
     def with(opts)
-      return self if opts.blank?
-
       spawn.with!(opts)
     end
 
     # Works same as `.with` but it adds `RECURSIVE` modifier to the query.
     # Using RECURSIVE, a WITH query can refer to its own output.
     def with_recursive(opts)
-      return self if opts.blank?
-
-      spawn.with!(opts, recursive: true)
+      self.recursive_with_value = true
+      with(opts)
     end
 
     def with!(opts, recursive: false)
       self.with_values += [opts]
-      self.with_values += [:recursive] if recursive
       self
     end
 
@@ -1359,10 +1355,9 @@ module ActiveRecord
       def build_with(arel)
         return if with_values.empty?
 
-        recursive = with_values.delete(:recursive)
         with_statements = with_values.map do |with_value|
           case with_value
-          when Arel::Nodes::As then with_value
+          when Arel::Nodes::As, Arel::Nodes::TableAlias then with_value
           when Array then build_with_value_from_array(with_value)
           when Hash then build_with_value_from_hash(with_value)
           else
@@ -1370,7 +1365,7 @@ module ActiveRecord
           end
         end
 
-        recursive ?  arel.with(:recursive, with_statements) : arel.with(with_statements)
+        recursive_with_value ?  arel.with(:recursive, with_statements) : arel.with(with_statements)
       end
 
       def build_with_value_from_array(array)
@@ -1383,15 +1378,14 @@ module ActiveRecord
 
       def build_with_value_from_hash(hash)
         hash.map do |name, value|
-          table = Arel::Table.new(name)
           expression = case value
-                       when String then Arel::Nodes::SqlLiteral.new("(#{value})")
+                       when String then Arel.sql("(#{value})")
                        when ActiveRecord::Relation then value.arel
-                       when Arel::SelectManager, Arel::Nodes::Union then value
+                       when Arel::SelectManager, Arel::Nodes::Union, Arel::Nodes::UnionAll then value
                        else
                          raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
           end
-          Arel::Nodes::As.new(table, expression)
+          Arel::Nodes::TableAlias.new(expression, Arel.sql(name.to_s))
         end
       end
 

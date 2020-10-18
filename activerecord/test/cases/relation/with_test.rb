@@ -61,7 +61,7 @@ module ActiveRecord
       assert_equal posts_with_tags_and_comments.to_a, actual
     end
 
-    def test_multiple_with_randomly_callled
+    def test_multiple_with_calls_randomly_called
       posts_with_tags_and_comments = Post.where("tags_count > 0").where("legacy_comments_count > 0")
       actual = Post
         .with(posts_with_tags: Post.where("tags_count > 0"))
@@ -70,20 +70,36 @@ module ActiveRecord
       assert_equal posts_with_tags_and_comments.to_a, actual
     end
 
-    def test_with_recursive_call
+    def test_with_recursive_when_union_is_passed_as_string
       comment = Comment.last
       first_reply = Comment.create!(body: "First reply", parent: comment, post: comment.post)
+      sub_reply = Comment.create!(body: "Reply to first reply", parent: first_reply, post: comment.post)
       second_reply = Comment.create!(body: "Second reply", parent: comment, post: comment.post)
 
       union = %{
         SELECT comments.id, comments.parent_id FROM comments WHERE comments.id = #{comment.id}
         UNION
-        SELECT comments.id, comments.parent_id FROM comments INNER JOIN replies ON comments.parent_id = replies.id
+        SELECT comments.id, comments.parent_id FROM comments INNER JOIN thread ON comments.parent_id = thread.id
       }
-      thread = Comment.with_recursive(replies: union).from("replies AS comments").order(:created_at)
+      thread = Comment.with_recursive(thread: union).from("thread AS comments").order(:id)
 
-      assert thread.to_sql.start_with?("WITH RECURSIVE")
-      assert_equal [comment.id, first_reply.id, second_reply.id], thread.pluck(:id)
+      assert_equal [comment.id, first_reply.id, sub_reply.id, second_reply.id], thread.pluck(:id)
+    end
+
+    def test_with_recursive_when_union_is_passed_as_arel_node
+      comment = Comment.last
+      first_reply = Comment.create!(body: "First reply", parent: comment, post: comment.post)
+      sub_reply = Comment.create!(body: "Reply to first reply", parent: first_reply, post: comment.post)
+      second_reply = Comment.create!(body: "Second reply", parent: comment, post: comment.post)
+
+      non_recursive_relation = Comment.select(:id, :parent_id, "0").where(parent: comment)
+      recursive_relation = Comment.select(:id, :parent_id, "replies.depth + 1").joins("JOIN replies ON comments.parent_id = replies.id")
+      union = non_recursive_relation.arel.union("all", recursive_relation.arel)
+      replies = Comment
+        .with_recursive("replies(id, parent_id, depth)" => union)
+        .from("replies AS comments")
+        .order(:id)
+      assert_equal [[first_reply.id, 0], [sub_reply.id, 1], [second_reply.id, 0]], replies.pluck(:id, :depth)
     end
 
     def test_count_after_with_call
