@@ -5,23 +5,28 @@
 
     ```ruby
     posts_with_comments_table = Arel::Table.new(:posts_with_comments)
-    posts_with_comments_expression = Post.arel_table.where(posts_with_comments_table[:comments_count].gt(0))
-    posts_with_tags_table = Arel::Table.new(:posts_with_tags)
-    posts_with_tags_expression = Post.arel_table.where(posts_with_tags_table[:tags_count].gt(0))
+    posts_with_comments_expression = Post.where("comments_count > ?", 0).arel
+    Post.all.arel.with(Arel::Nodes::As.new(posts_with_comments_table, posts_with_comments_expression))
+    # => Arel::SelectManager
 
-    Post.all.arel.with([
-      Arel::Nodes::As.new(posts_with_comments_table, posts_with_comments_expression),
-      Arel::Nodes::As.new(posts_with_tags_table, posts_with_tags_expression)
-    ])
+    non_recursive_relation = Comment.select(:id, :parent_id).where(parent: nil)
+    recursive_relation = Comment.select(:id, :parent_id).joins("JOIN replies ON comments.parent_id = replies.id")
+    replies_table = Arel::Table.new(:replies)
+    union = non_recursive_relation.arel.union(recursive_relation.arel)
+    Post.all.arel.with(:recursive, Arel::Nodes::As.new(replies_table, union))
+    # => Arel::SelectManager
     ```
 
     After:
 
     ```ruby
-    Post.with(
-      posts_with_comments: Post.where("comments_count > ?", 0),
-      posts_with_tags: Post.where("tags_count > ?", 0)
-    )
+    Post.with(:posts_with_comments, Post.where("comments_count > ?", 0))
+    # => ActiveRecord::Relation
+
+    non_recursive_relation = Comment.select(:id, :parent_id).where(parent: nil)
+    recursive_relation = Comment.select(:id, :parent_id).joins("JOIN replies ON comments.parent_id = replies.id")
+    Post.with_recursive(:replies, non_recursive_relation, recursive_relation)
+    # => ActiveRecord::Relation
     ```
 
     *Vlado Cingel*

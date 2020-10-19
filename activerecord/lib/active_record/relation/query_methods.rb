@@ -399,11 +399,11 @@ module ActiveRecord
     #
     # To add multiple CTEs you can chain `.with` / `.with_recursive` calls
     #
-    #   top_comments = Comment.order(replies_count: :desc).limit(1)
+    #   top_comment = Comment.order(replies_count: :desc).limit(1)
     #   non_recursive_relation = Comment.select(:id, :parent_id, 0).joins("JOIN top_comment ON top_comment.id = comments.parent_id")
     #   recursive_relation = Comment.select(:id, :parent_id, "replies.depth + 1").joins("JOIN replies ON comments.parent_id = replies.id")
     #   Comment
-    #     .with(:top_comments, top_comments)
+    #     .with(:top_comment, top_comment)
     #     .with_recursive(:replies, non_recursive_relation, recursive_relation)
     #   # WITH RECURSIVE top_comment AS (
     #   #   SELECT comments.id FROM comments ORDER BY comments.replies_count DESC LIMIT 1
@@ -418,7 +418,7 @@ module ActiveRecord
     # so you will probably need to pass the expression as `String` or raw Arel expression.
     #
     #   union = non_recursive_relation.arel.union(recursive_relation.arel)
-    #   Comment.with_recursive(top_comments: top_comments, replies: union)
+    #   Comment.with_recursive(top_comment: top_comment, replies: union)
     #   # WITH RECURSIVE top_comment AS (
     #   #   SELECT comments.id FROM comments ORDER BY comments.replies_count DESC LIMIT 1
     #   # ), replies(id, parent_id, depth) AS (
@@ -437,10 +437,10 @@ module ActiveRecord
         union = non_recursive_relation.arel.union(*union_args)
         opts = { name_or_opts => union }
       end
-      with(opts)
+      with!(opts)
     end
 
-    def with!(opts, recursive: false)
+    def with!(opts)
       self.with_values += [opts]
       self
     end
@@ -1480,13 +1480,14 @@ module ActiveRecord
 
       def build_with_value_from_hash(hash)
         hash.map do |name, value|
-          expression = case value
-                       when Arel::Nodes::SqlLiteral, String then Arel.sql("(#{value})")
-                       when ActiveRecord::Relation then value.arel
-                       when Arel::SelectManager, Arel::Nodes::Union, Arel::Nodes::UnionAll then value
-                       else
-                         raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
-          end
+          expression =
+            case value
+            when Arel::Nodes::SqlLiteral, String then Arel.sql("(#{value})")
+            when ActiveRecord::Relation then value.arel
+            when Arel::SelectManager, Arel::Nodes::Union, Arel::Nodes::UnionAll then value
+            else
+              raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
+            end
           Arel::Nodes::TableAlias.new(expression, Arel.sql(name.to_s))
         end
       end

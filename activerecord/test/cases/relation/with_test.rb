@@ -78,7 +78,7 @@ module ActiveRecord
         .from("replies")
         .order(:id)
 
-      assert_match /UNION ALL SELECT/, replies.to_sql
+      assert_match(/UNION ALL SELECT/, replies.to_sql)
       assert_equal [[first_reply.id, 0], [sub_reply.id, 1], [second_reply.id, 0]], replies.pluck(:id, :depth)
     end
 
@@ -90,7 +90,7 @@ module ActiveRecord
         .from("replies")
         .order(:id)
 
-      assert_match /UNION SELECT/, replies.to_sql
+      assert_match(/UNION SELECT/, replies.to_sql)
     end
 
     def test_with_recursive_when_union_is_passed_as_string
