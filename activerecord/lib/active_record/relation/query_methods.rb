@@ -301,7 +301,7 @@ module ActiveRecord
     end
 
     # Returns a new relation, which adds Common Table Expression that you can then reference
-    # within another SELECT, INSERT, UPDATE or DELETE statement.
+    # within another SELECT statement.
     #
     # #with accepts a hash, in which the keys are results names and values are expressions that
     # will return those results. In the examples below, the resulting SQL is given as an illustration;
@@ -327,12 +327,46 @@ module ActiveRecord
     #
     #   Post.with(posts_with_tags: Post.where("tags_count > ?", 0).joins("JOIN posts_with_tags ON posts_with_tags.id = posts.id")
     #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts JOIN posts_with_tags ON posts_with_tags.id = posts.id
+    #
+    #   For recursive queries see `.with_recursive` method.
     def with(opts)
       spawn.with!(opts)
     end
 
     # Works same as `.with` but it adds `RECURSIVE` modifier to the query.
     # Using RECURSIVE, a WITH query can refer to its own output.
+    #
+    # #with_recursive also accepts a hash, in which the keys are common table names and values are expressions that
+    # will return results. In the examples below, the resulting SQL is given as an illustration;
+    # the actual query generated may be different depending on the database adapter.
+    #
+    #   non_recursive_query = Comment.select(:id, :parent_id).where(parent_id: nil)
+    #   recursive_query = Comment.select(:id, :parent_id).joins("JOIN threads ON threads.id = comments.parent_id")
+    #   Post.with_recursive(:threads, non_recursive_query, recursive_query)
+    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id FROM comments WHERE parent_id IS NULL UNION ALL SELECT comments.id, comments.parent_id FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    #
+    # If you need to define columns with your common table name pass it as a string.
+    #
+    #   non_recursive_query = Comment.select(:id, :parent_id, 0).where(parent_id: nil)
+    #   recursive_query = Comment.select(:id, :parent_id, "threads.depth + 1").joins("JOIN threads ON threads.id = comments.parent_id")
+    #   Post.with_recursive("threads(id, parent, depth)", non_recursive_query, recursive_query)
+    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL UNION ALL SELECT comments.id, comments.parent_id , threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    #
+    # Note that `UNION ALL` is used by default. If you need to use `UNION` you can set `union_all` option to `false`.
+    #
+    #   Post.with_recursive("threads(id, parent, depth)", non_recursive_query, recursive_query, union_all: false)
+    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL UNION SELECT comments.id, comments.parent_id , threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    #
+    #   non_recursive_query = Comment.select(:id, :parent_id, 0).where(parent_id: nil)
+    #   recursive_query = Comment.select(:id, :parent_id, "threads.depth + 1").joins("JOIN threads ON threads.id = comments.parent_id")
+    #   Post.with_recursive("threads(id, parent, depth)", non_recursive_query, recursive_query)
+    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL UNION ALL SELECT comments.id, comments.parent_id , threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    #
+    # #with_recursive also accepts a hash same way as `.with` but be aware that `ActiveRecord::Relation` does not
+    # have `UNION` support so you will probably need to pass the expression as `String` or raw Arel expression.
+    #
+    # Please note again that building your own string from user input may expose your application
+    # to injection attacks if not done properly. It is recommended to use `ActiveRecord::Relation` instead.
     def with_recursive(name_or_opts, non_recursive_relation = nil, recursive_relation = nil, options = {})
       self.recursive_with_value = true
       if name_or_opts.is_a?(Hash)
@@ -1377,7 +1411,7 @@ module ActiveRecord
       end
 
       def build_with_value_from_array(array)
-        unless array.map(&:class).uniq == [Arel::Nodes::As]
+        if array.detect { |item| ![Arel::Nodes::As, Arel::Nodes::TableAlias].include?(item.class) }
           raise ArgumentError, "Unsupported argument type: #{array} #{array.class}"
         end
 
@@ -1387,13 +1421,13 @@ module ActiveRecord
       def build_with_value_from_hash(hash)
         hash.map do |name, value|
           expression = case value
-                       when String then Arel.sql("(#{value})")
+                       when Arel::Nodes::SqlLiteral, String then Arel.sql("(#{value})")
                        when ActiveRecord::Relation then value.arel
                        when Arel::SelectManager, Arel::Nodes::Union, Arel::Nodes::UnionAll then value
                        else
                          raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
           end
-          Arel::Nodes::TableAlias.new(expression, name.to_s)
+          Arel::Nodes::TableAlias.new(expression, Arel.sql(name.to_s))
         end
       end
 

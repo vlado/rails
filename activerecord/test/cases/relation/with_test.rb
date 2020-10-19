@@ -25,18 +25,17 @@ module ActiveRecord
       assert_equal posts_with_comments.to_a, actual
     end
 
-    def test_with_when_array_of_arel_node_as_is_passed_as_an_argument
+    def test_with_when_array_of_arel_node_as_and_table_alias_is_passed_as_an_argument
       posts_with_tags_and_comments = Post.where("legacy_comments_count > 0").where("tags_count > 0")
 
       posts_table = Arel::Table.new(:posts)
-      first_cte_table = Arel::Table.new(:posts_with_comments)
-      first_cte_select = posts_table.project(Arel.star).where(posts_table[:legacy_comments_count].gt(0))
-      first_as = Arel::Nodes::As.new(first_cte_table, first_cte_select)
-      second_cte_table = Arel::Table.new(:posts_with_tags_and_comments)
-      second_cte_select = first_cte_table.project(Arel.star).where(first_cte_table[:tags_count].gt(0))
-      second_as = Arel::Nodes::As.new(second_cte_table, second_cte_select)
+      posts_with_comments_table = Arel::Table.new(:posts_with_comments)
+      posts_with_comments_expression = posts_table.project(Arel.star).where(posts_table[:legacy_comments_count].gt(0))
+      as = Arel::Nodes::As.new(posts_with_comments_table, posts_with_comments_expression)
+      posts_with_tags_and_comments_expression = posts_with_comments_table.project(Arel.star).where(posts_with_comments_table[:tags_count].gt(0))
+      table_alias = Arel::Nodes::TableAlias.new(posts_with_tags_and_comments_expression, :posts_with_tags_and_comments)
 
-      actual = Post.with([first_as, second_as]).from("posts_with_tags_and_comments AS posts")
+      actual = Post.with([as, table_alias]).from("posts_with_tags_and_comments AS posts")
       assert_equal posts_with_tags_and_comments.to_a, actual
     end
 
@@ -76,7 +75,7 @@ module ActiveRecord
       sub_reply = Comment.create!(body: "Reply to first reply", parent: first_reply, post: comment.post)
       second_reply = Comment.create!(body: "Second reply", parent: comment, post: comment.post)
 
-      non_recursive_relation = Comment.select(:id, :parent_id, "0").where(parent: comment)
+      non_recursive_relation = Comment.select(:id, :parent_id, 0).where(parent: comment)
       recursive_relation = Comment.select(:id, :parent_id, "replies.depth + 1").joins("JOIN replies ON comments.parent_id = replies.id")
       replies = Comment
         .with_recursive("replies(id, parent_id, depth)", non_recursive_relation, recursive_relation)
