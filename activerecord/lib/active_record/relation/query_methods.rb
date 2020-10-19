@@ -300,73 +300,133 @@ module ActiveRecord
       self
     end
 
-    # Returns a new relation, which adds Common Table Expression that you can then reference
-    # within another SELECT statement.
+    # Add a Common Table Expression (CTE) that you can then reference within another SELECT statement.
     #
-    # #with accepts a hash, in which the keys are results names and values are expressions that
-    # will return those results. In the examples below, the resulting SQL is given as an illustration;
-    # the actual query generated may be different depending on the database adapter.
+    #   Post.with(:posts_with_tags, Post.where("tags_count > ?", 0))
+    #   # WITH posts_with_tags AS (
+    #   #   SELECT * FROM posts WHERE (tags_count > 0)
+    #   # )
+    #   # SELECT * FROM posts
     #
-    # Keys can be symbols or strings. Values can be `String` or `ActiveRecord::Relation`.
+    # Once you define Common Table Expression you can use custom `FROM` value or `JOIN` to reference it.
     #
-    #   Post.with("posts_with_tags" => "SELECT * FROM posts WHERE tags_count > 0")
-    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE tags_count > 0) SELECT * FROM posts
+    #   Post.with(:posts_with_tags, Post.where("tags_count > ?", 0).from("posts_with_tags AS posts")
+    #   # WITH posts_with_tags AS (
+    #   #  SELECT * FROM posts WHERE (tags_count > 0)
+    #   # )
+    #   # SELECT * FROM posts_with_tags AS posts
     #
-    #   Post.with(posts_with_comments: Post.where("comments_count > ?", 0), posts_with_tags: "SELECT * FROM posts WHERE tags_count > 0")
-    #   # WITH posts_with_comments AS (SELECT * FROM posts WHERE (comments_count > 0)), posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts
+    #   Post.with(:posts_with_tags, Post.where("tags_count > ?", 0).joins("JOIN posts_with_tags ON posts_with_tags.id = posts.id"))
+    #   # WITH posts_with_tags AS (
+    #   #   SELECT * FROM posts WHERE (tags_count > 0)
+    #   # )
+    #   # SELECT * FROM posts JOIN posts_with_tags ON posts_with_tags.id = posts.id
     #
-    # Please note again that building your own string from user input may expose your application
-    # to injection attacks if not done properly. It is recommended to use `ActiveRecord::Relation` instead.
+    # You can also pass the expression as a `String`.
     #
-    # === example
+    #   Post.with(:posts_with_tags, "SELECT * FROM posts WHERE tags_count > 0")
+    #   # WITH posts_with_tags AS (
+    #   #   SELECT * FROM posts WHERE tags_count > 0)
+    #   # )
+    #   # SELECT * FROM posts
     #
-    # Once you have your Common Table Expression you can use custom `FROM` value or `JOIN` to reference it later
+    # Note that building your own string from user input may expose your application to injection attacks
+    # if not done properly. It is recommended to use `ActiveRecord::Relation` instead.
     #
-    #   Post.with(posts_with_tags: Post.where("tags_count > ?", 0).from("posts_with_tags")
-    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts_with_tags posts
+    # To add multiple CTEs you can chain `.with` / `.with_recursive` calls
     #
-    #   Post.with(posts_with_tags: Post.where("tags_count > ?", 0).joins("JOIN posts_with_tags ON posts_with_tags.id = posts.id")
-    #   # WITH posts_with_tags AS (SELECT * FROM posts WHERE (tags_count > 0)) SELECT * FROM posts JOIN posts_with_tags ON posts_with_tags.id = posts.id
+    #   Post
+    #     .with(:posts_with_comments, Post.where("comments_count > ?", 0))
+    #     .with(:posts_with_tags, Post.where("tags_count > ?", 0))
+    #   # WITH posts_with_comments AS (
+    #   #   SELECT * FROM posts WHERE (comments_count > 0)
+    #   # ), posts_with_tags AS (
+    #   #   SELECT * FROM posts WHERE (tags_count > 0)
+    #   # )
+    #   # SELECT * FROM posts
     #
-    #   For recursive queries see `.with_recursive` method.
-    def with(opts)
+    # or pass them as a `Hash`.
+    #
+    #   Post.with(posts_with_comments: Post.where("comments_count > ?", 0), posts_with_tags: Post.where("tags_count > ?", 0))
+    #   # WITH posts_with_comments AS (
+    #   #   SELECT * FROM posts WHERE (comments_count > 0)
+    #   # ), posts_with_tags AS (
+    #   #   SELECT * FROM posts WHERE (tags_count > 0)
+    #   # )
+    #   # SELECT * FROM posts
+    #
+    # For recursive queries see `.with_recursive` method.
+    def with(name_or_opts, relation = nil)
+      opts = if relation
+        { name_or_opts => relation }
+      else
+        name_or_opts
+      end
       spawn.with!(opts)
     end
 
     # Works same as `.with` but it adds `RECURSIVE` modifier to the query.
     # Using RECURSIVE, a WITH query can refer to its own output.
     #
-    # #with_recursive also accepts a hash, in which the keys are common table names and values are expressions that
-    # will return results. In the examples below, the resulting SQL is given as an illustration;
-    # the actual query generated may be different depending on the database adapter.
-    #
     #   non_recursive_query = Comment.select(:id, :parent_id).where(parent_id: nil)
     #   recursive_query = Comment.select(:id, :parent_id).joins("JOIN threads ON threads.id = comments.parent_id")
     #   Post.with_recursive(:threads, non_recursive_query, recursive_query)
-    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id FROM comments WHERE parent_id IS NULL UNION ALL SELECT comments.id, comments.parent_id FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    #   # WITH RECURSIVE threads AS (
+    #   #   SELECT comments.id, comments.parent_id FROM comments WHERE comments.parent_id IS NULL
+    #   #   UNION ALL
+    #   #   SELECT comments.id, comments.parent_id FROM comments JOIN threads ON comments.parent_id = threads.id
+    #   # ) SELECT * FROM posts
     #
-    # If you need to define columns with your common table name pass it as a string.
+    # If you need to define columns with your common table name pass it as a `String`.
     #
     #   non_recursive_query = Comment.select(:id, :parent_id, 0).where(parent_id: nil)
     #   recursive_query = Comment.select(:id, :parent_id, "threads.depth + 1").joins("JOIN threads ON threads.id = comments.parent_id")
     #   Post.with_recursive("threads(id, parent, depth)", non_recursive_query, recursive_query)
-    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL UNION ALL SELECT comments.id, comments.parent_id , threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    #   # WITH RECURSIVE threads(id, parent, depth) AS (
+    #   #   SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL
+    #   #   UNION ALL
+    #   #   SELECT comments.id, comments.parent_id, threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id
+    #   # ) SELECT * FROM posts
     #
     # Note that `UNION ALL` is used by default. If you need to use `UNION` you can set `union_all` option to `false`.
     #
     #   Post.with_recursive("threads(id, parent, depth)", non_recursive_query, recursive_query, union_all: false)
-    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL UNION SELECT comments.id, comments.parent_id , threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    #   # WITH RECURSIVE threads(id, parent, depth) AS (
+    #   #   SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL
+    #   #   UNION
+    #   #   SELECT comments.id, comments.parent_id, threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id
+    #   # ) SELECT * FROM posts
     #
-    #   non_recursive_query = Comment.select(:id, :parent_id, 0).where(parent_id: nil)
-    #   recursive_query = Comment.select(:id, :parent_id, "threads.depth + 1").joins("JOIN threads ON threads.id = comments.parent_id")
-    #   Post.with_recursive("threads(id, parent, depth)", non_recursive_query, recursive_query)
-    #   # WITH RECURSIVE threads AS (SELECT comments.id, comments.parent_id, 0 FROM comments WHERE comments.parent_id IS NULL UNION ALL SELECT comments.id, comments.parent_id , threads.depth + 1 FROM comments JOIN threads ON comments.parent_id = threads.id) SELECT * FROM posts
+    # To add multiple CTEs you can chain `.with` / `.with_recursive` calls
     #
-    # #with_recursive also accepts a hash same way as `.with` but be aware that `ActiveRecord::Relation` does not
-    # have `UNION` support so you will probably need to pass the expression as `String` or raw Arel expression.
+    #   top_comments = Comment.order(replies_count: :desc).limit(1)
+    #   non_recursive_relation = Comment.select(:id, :parent_id, 0).joins("JOIN top_comment ON top_comment.id = comments.parent_id")
+    #   recursive_relation = Comment.select(:id, :parent_id, "replies.depth + 1").joins("JOIN replies ON comments.parent_id = replies.id")
+    #   Comment
+    #     .with(:top_comments, top_comments)
+    #     .with_recursive(:replies, non_recursive_relation, recursive_relation)
+    #   # WITH RECURSIVE top_comment AS (
+    #   #   SELECT comments.id FROM comments ORDER BY comments.replies_count DESC LIMIT 1
+    #   # ), replies(id, parent_id, depth) AS (
+    #   #   SELECT comments.id, comments.parent_id, 0 FROM comments JOIN top_comment ON top_comment.id = comments.parent_id
+    #   #   UNION ALL
+    #   #   SELECT comments.id, comments.parent_id, replies.depth + 1 FROM comments JOIN replies ON comments.parent_id = replies.id
+    #   # )
+    #   # SELECT comments.* FROM replies
     #
-    # Please note again that building your own string from user input may expose your application
-    # to injection attacks if not done properly. It is recommended to use `ActiveRecord::Relation` instead.
+    # or pass them as a `Hash` but be aware that `ActiveRecord::Relation` does not have `UNION` support
+    # so you will probably need to pass the expression as `String` or raw Arel expression.
+    #
+    #   union = non_recursive_relation.arel.union(recursive_relation.arel)
+    #   Comment.with_recursive(top_comments: top_comments, replies: union)
+    #   # WITH RECURSIVE top_comment AS (
+    #   #   SELECT comments.id FROM comments ORDER BY comments.replies_count DESC LIMIT 1
+    #   # ), replies(id, parent_id, depth) AS (
+    #   #   SELECT comments.id, comments.parent_id, 0 FROM comments JOIN top_comment ON top_comment.id = comments.parent_id
+    #   #   UNION ALL
+    #   #   SELECT comments.id, comments.parent_id, replies.depth + 1 FROM comments JOIN replies ON comments.parent_id = replies.id
+    #   # )
+    #   # SELECT comments.* FROM replies
     def with_recursive(name_or_opts, non_recursive_relation = nil, recursive_relation = nil, options = {})
       self.recursive_with_value = true
       if name_or_opts.is_a?(Hash)

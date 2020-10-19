@@ -9,6 +9,12 @@ module ActiveRecord
     fixtures :comments
     fixtures :posts
 
+    def test_with_when_name_and_expression_is_passed_as_argument
+      posts_with_comments = Post.where("legacy_comments_count > 0")
+      actual = Post.with(:posts_with_comments, posts_with_comments).from("posts_with_comments AS posts")
+      assert_equal posts_with_comments.to_a, actual
+    end
+
     def test_with_when_hash_is_passed_as_an_argument
       posts_with_comments = Post.where("legacy_comments_count > 0")
       actual = Post.with(posts_with_comments: posts_with_comments).from("posts_with_comments AS posts")
@@ -22,6 +28,14 @@ module ActiveRecord
       cte_select = posts_table.project(Arel.star).where(posts_table[:legacy_comments_count].gt(0))
       as = Arel::Nodes::As.new(cte_table, cte_select)
       actual = Post.with(as).from("posts_with_comments AS posts")
+      assert_equal posts_with_comments.to_a, actual
+    end
+
+    def test_with_when_arel_table_alias_is_passed_as_an_argument
+      posts_with_comments = Post.where("legacy_comments_count > 0")
+      expression = Post.arel_table.project(Arel.star).where(Post.arel_table[:legacy_comments_count].gt(0))
+      table_alias = Arel::Nodes::TableAlias.new(expression, :posts_with_comments)
+      actual = Post.with(table_alias).from("posts_with_comments AS posts")
       assert_equal posts_with_comments.to_a, actual
     end
 
@@ -45,31 +59,13 @@ module ActiveRecord
       cte_options = {
         posts_with_tags: posts_arel_table.project(Arel.star).where(posts_arel_table[:tags_count].gt(0)),
         posts_with_tags_and_comments: "SELECT * FROM posts_with_tags WHERE legacy_comments_count > 0",
-        posts_with_tags_and_multiple_comments: Post.where("legacy_comments_count > 1").from("posts_with_tags_and_comments AS posts")
+        "posts_with_tags_and_multiple_comments" => Post.where("legacy_comments_count > 1").from("posts_with_tags_and_comments AS posts")
       }
       actual = Post.with(cte_options).from("posts_with_tags_and_multiple_comments AS posts")
       assert_equal posts_with_tags_and_multiple_comments.to_a, actual
     end
 
-    def test_multiple_with_calls
-      posts_with_tags_and_comments = Post.where("tags_count > 0").where("legacy_comments_count > 0")
-      actual = Post
-        .with(posts_with_tags: Post.where("tags_count > 0"))
-        .with(posts_with_tags_and_comments: "SELECT * FROM posts_with_tags WHERE legacy_comments_count > 0")
-        .from("posts_with_tags_and_comments AS posts")
-      assert_equal posts_with_tags_and_comments.to_a, actual
-    end
-
-    def test_multiple_with_calls_randomly_called
-      posts_with_tags_and_comments = Post.where("tags_count > 0").where("legacy_comments_count > 0")
-      actual = Post
-        .with(posts_with_tags: Post.where("tags_count > 0"))
-        .from("posts_with_tags_and_comments AS posts")
-        .with(posts_with_tags_and_comments: "SELECT * FROM posts_with_tags WHERE legacy_comments_count > 0")
-      assert_equal posts_with_tags_and_comments.to_a, actual
-    end
-
-    def test_with_rcursive_when_union_is_composed_from_ar_relations
+    def test_with_recursive_when_union_is_composed_from_ar_relations
       comment = Comment.last
       first_reply = Comment.create!(body: "First reply", parent: comment, post: comment.post)
       sub_reply = Comment.create!(body: "Reply to first reply", parent: first_reply, post: comment.post)
@@ -129,6 +125,32 @@ module ActiveRecord
       assert_equal [[first_reply.id, 0], [sub_reply.id, 1], [second_reply.id, 0]], replies.pluck(:id, :depth)
     end
 
+    def test_multiple_with_calls
+      posts_with_tags_and_comments = Post.where("tags_count > 0").where("legacy_comments_count > 0")
+      actual = Post
+        .with(:posts_with_tags, Post.where("tags_count > 0"))
+        .from("posts_with_tags_and_comments AS posts")
+        .with(posts_with_tags_and_comments: "SELECT * FROM posts_with_tags WHERE legacy_comments_count > 0")
+      assert_equal posts_with_tags_and_comments.to_a, actual
+    end
+
+    def test_multiple_with_and_with_recursive_calls
+      top_comment = Comment.last
+      first_reply = Comment.create!(body: "First reply", parent: top_comment, post: top_comment.post)
+      sub_reply = Comment.create!(body: "Reply to first reply", parent: first_reply, post: top_comment.post)
+      second_reply = Comment.create!(body: "Second reply", parent: top_comment, post: top_comment.post)
+
+      non_recursive_relation = Comment.select(:id, :parent_id, 0).joins("JOIN top_comment ON top_comment.id = comments.parent_id")
+      recursive_relation = Comment.select(:id, :parent_id, "replies.depth + 1").joins("JOIN replies ON comments.parent_id = replies.id")
+      replies = Comment
+        .with(:top_comment, Comment.where(id: top_comment.id).select(:id))
+        .with_recursive("replies(id, parent_id, depth)", non_recursive_relation, recursive_relation)
+        .from("replies")
+        .order(:id)
+
+      assert_equal [[first_reply.id, 0], [sub_reply.id, 1], [second_reply.id, 0]], replies.pluck(:id, :depth)
+    end
+
     def test_count_after_with_call
       posts_count = Post.all.count
       posts_with_legacy_comments_count = Post.where("legacy_comments_count > 0").count
@@ -146,7 +168,7 @@ module ActiveRecord
     end
 
     def test_with_when_invalid_params_are_passed
-      assert_raise(ArgumentError) { Post.with.load }
+      assert_raise(ArgumentError) { Post.with }
       assert_raise(ArgumentError) { Post.with([{ posts_with_tags: Post.where("tags_count > 0") }]).load }
     end
 
