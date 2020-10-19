@@ -70,6 +70,34 @@ module ActiveRecord
       assert_equal posts_with_tags_and_comments.to_a, actual
     end
 
+    def test_with_rcursive_when_union_is_composed_from_ar_relations
+      comment = Comment.last
+      first_reply = Comment.create!(body: "First reply", parent: comment, post: comment.post)
+      sub_reply = Comment.create!(body: "Reply to first reply", parent: first_reply, post: comment.post)
+      second_reply = Comment.create!(body: "Second reply", parent: comment, post: comment.post)
+
+      non_recursive_relation = Comment.select(:id, :parent_id, "0").where(parent: comment)
+      recursive_relation = Comment.select(:id, :parent_id, "replies.depth + 1").joins("JOIN replies ON comments.parent_id = replies.id")
+      replies = Comment
+        .with_recursive("replies(id, parent_id, depth)", non_recursive_relation, recursive_relation)
+        .from("replies")
+        .order(:id)
+
+      assert_match /UNION ALL SELECT/, replies.to_sql
+      assert_equal [[first_reply.id, 0], [sub_reply.id, 1], [second_reply.id, 0]], replies.pluck(:id, :depth)
+    end
+
+    def test_with_recursive_using_union_instead_of_union_all
+      non_recursive_relation = Comment.select(:id, :parent_id, "0").where(parent: Comment.last)
+      recursive_relation = Comment.select(:id, :parent_id, "replies.depth + 1").joins("JOIN replies ON comments.parent_id = replies.id")
+      replies = Comment
+        .with_recursive("replies(id, parent_id, depth)", non_recursive_relation, recursive_relation, union_all: false)
+        .from("replies")
+        .order(:id)
+
+      assert_match /UNION SELECT/, replies.to_sql
+    end
+
     def test_with_recursive_when_union_is_passed_as_string
       comment = Comment.last
       first_reply = Comment.create!(body: "First reply", parent: comment, post: comment.post)

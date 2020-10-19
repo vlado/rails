@@ -333,8 +333,16 @@ module ActiveRecord
 
     # Works same as `.with` but it adds `RECURSIVE` modifier to the query.
     # Using RECURSIVE, a WITH query can refer to its own output.
-    def with_recursive(opts)
+    def with_recursive(name_or_opts, non_recursive_relation = nil, recursive_relation = nil, options = {})
       self.recursive_with_value = true
+      if name_or_opts.is_a?(Hash)
+        opts = name_or_opts
+      else
+        options[:union_all] = true unless options.key?(:union_all)
+        union_args = options[:union_all] ? ["all", recursive_relation.arel] : recursive_relation.arel
+        union = non_recursive_relation.arel.union(*union_args)
+        opts = { name_or_opts => union }
+      end
       with(opts)
     end
 
@@ -1385,7 +1393,7 @@ module ActiveRecord
                        else
                          raise ArgumentError, "Unsupported argument type: #{value} #{value.class}"
           end
-          Arel::Nodes::TableAlias.new(expression, Arel.sql(name.to_s))
+          Arel::Nodes::TableAlias.new(expression, name.to_s)
         end
       end
 
