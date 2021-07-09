@@ -1568,7 +1568,7 @@ module ActiveRecord
           end
         end
 
-        recursive_with_value ?  arel.with(:recursive, with_statements) : arel.with(with_statements)
+        recursive_with_value ? arel.with(:recursive, with_statements) : arel.with(with_statements)
       end
 
       def build_with_value_from_array(array)
