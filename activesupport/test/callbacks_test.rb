@@ -59,11 +59,11 @@ module CallbacksTest
 
     [:before_save, :after_save].each do |callback_method|
       callback_method_sym = callback_method.to_sym
-      send(callback_method, callback_symbol(callback_method_sym))
-      send(callback_method, callback_proc(callback_method_sym))
-      send(callback_method, callback_object(callback_method_sym.to_s.gsub(/_save/, "")))
-      send(callback_method, CallbackClass)
-      send(callback_method) { |model| model.history << [callback_method_sym, :block] }
+      public_send(callback_method, callback_symbol(callback_method_sym))
+      public_send(callback_method, callback_proc(callback_method_sym))
+      public_send(callback_method, callback_object(callback_method_sym.to_s.gsub(/_save/, "")))
+      public_send(callback_method, CallbackClass)
+      public_send(callback_method) { |model| model.history << [callback_method_sym, :block] }
     end
 
     def save
@@ -1127,15 +1127,6 @@ module CallbacksTest
         assert_equal i, calls.length
         calls.clear
       }
-    end
-
-    def test_skip_lambda # raises error
-      calls = []
-      callback = ->(o) { calls << o }
-      klass = build_class(callback)
-      assert_raises(ArgumentError) { klass.skip callback }
-      klass.new.run
-      assert_equal 10, calls.length
     end
 
     def test_skip_symbol # removes all

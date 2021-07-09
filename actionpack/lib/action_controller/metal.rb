@@ -135,7 +135,7 @@ module ActionController
       end
     end
 
-    def self.binary_params_for?(action) # :nodoc:
+    def self.action_encoding_template(action) # :nodoc:
       false
     end
 
@@ -219,10 +219,9 @@ module ActionController
     class << self
       # Pushes the given Rack middleware and its arguments to the bottom of the
       # middleware stack.
-      def use(*args, &block)
-        middleware_stack.use(*args, &block)
+      def use(...)
+        middleware_stack.use(...)
       end
-      ruby2_keywords(:use) if respond_to?(:ruby2_keywords, true)
     end
 
     # Alias for +middleware_stack+.

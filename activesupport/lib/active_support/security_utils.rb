@@ -6,14 +6,21 @@ module ActiveSupport
     #
     # The values compared should be of fixed length, such as strings
     # that have already been processed by HMAC. Raises in case of length mismatch.
-    def fixed_length_secure_compare(a, b)
-      raise ArgumentError, "string length mismatch." unless a.bytesize == b.bytesize
 
-      l = a.unpack "C#{a.bytesize}"
+    if defined?(OpenSSL.fixed_length_secure_compare)
+      def fixed_length_secure_compare(a, b)
+        OpenSSL.fixed_length_secure_compare(a, b)
+      end
+    else
+      def fixed_length_secure_compare(a, b)
+        raise ArgumentError, "string length mismatch." unless a.bytesize == b.bytesize
 
-      res = 0
-      b.each_byte { |byte| res |= byte ^ l.shift }
-      res == 0
+        l = a.unpack "C#{a.bytesize}"
+
+        res = 0
+        b.each_byte { |byte| res |= byte ^ l.shift }
+        res == 0
+      end
     end
     module_function :fixed_length_secure_compare
 
@@ -24,7 +31,7 @@ module ActiveSupport
     # the secret length. This should be considered when using secure_compare
     # to compare weak, short secrets to user input.
     def secure_compare(a, b)
-      a.length == b.length && fixed_length_secure_compare(a, b)
+      a.bytesize == b.bytesize && fixed_length_secure_compare(a, b)
     end
     module_function :secure_compare
   end

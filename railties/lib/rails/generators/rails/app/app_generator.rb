@@ -73,6 +73,9 @@ module Rails
     def version_control
       if !options[:skip_git] && !options[:pretend]
         run "git init", capture: options[:quiet], abort_on_failure: false
+        if user_default_branch.strip.empty?
+          `git symbolic-ref HEAD refs/heads/main`
+        end
       end
     end
 
@@ -94,20 +97,17 @@ module Rails
         "#{shebang}\n" + content
       end
       chmod "bin", 0755 & ~File.umask, verbose: false
+
+      remove_file "bin/spring" unless spring_install?
+      remove_file "bin/yarn" if options[:skip_javascript]
     end
 
     def bin_when_updating
       bin
-
-      if options[:skip_javascript]
-        remove_file "bin/yarn"
-      end
     end
 
     def yarn_when_updating
-      return if File.exist?("bin/yarn")
-
-      template "bin/yarn" do |content|
+      template "bin/yarn", force: true do |content|
         "#{shebang}\n" + content
       end
 
@@ -118,28 +118,30 @@ module Rails
       empty_directory "config"
 
       inside "config" do
-        template "routes.rb"
+        template "routes.rb" unless options[:updating]
         template "application.rb"
         template "environment.rb"
-        template "cable.yml" unless options[:skip_action_cable]
-        template "puma.rb"   unless options[:skip_puma]
+        template "cable.yml" unless options[:updating] || options[:skip_action_cable]
+        template "puma.rb"   unless options[:updating] || options[:skip_puma]
         template "spring.rb" if spring_install?
-        template "storage.yml" unless skip_active_storage?
+        template "storage.yml" unless options[:updating] || skip_active_storage?
 
         directory "environments"
         directory "initializers"
-        directory "locales"
+        directory "locales" unless options[:updating]
       end
     end
 
     def config_when_updating
-      cookie_serializer_config_exist = File.exist?("config/initializers/cookies_serializer.rb")
-      action_cable_config_exist      = File.exist?("config/cable.yml")
-      active_storage_config_exist    = File.exist?("config/storage.yml")
-      rack_cors_config_exist         = File.exist?("config/initializers/cors.rb")
-      assets_config_exist            = File.exist?("config/initializers/assets.rb")
-      csp_config_exist               = File.exist?("config/initializers/content_security_policy.rb")
-      feature_policy_config_exist    = File.exist?("config/initializers/feature_policy.rb")
+      cookie_serializer_config_exist  = File.exist?("config/initializers/cookies_serializer.rb")
+      action_cable_config_exist       = File.exist?("config/cable.yml")
+      active_storage_config_exist     = File.exist?("config/storage.yml")
+      rack_cors_config_exist          = File.exist?("config/initializers/cors.rb")
+      assets_config_exist             = File.exist?("config/initializers/assets.rb")
+      asset_manifest_exist            = File.exist?("app/assets/config/manifest.js")
+      asset_app_stylesheet_exist      = File.exist?("app/assets/stylesheets/application.css")
+      csp_config_exist                = File.exist?("config/initializers/content_security_policy.rb")
+      permissions_policy_config_exist = File.exist?("config/initializers/permissions_policy.rb")
 
       @config_target_version = Rails.application.config.loaded_config_version || "5.0"
 
@@ -161,6 +163,14 @@ module Rails
         remove_file "config/initializers/assets.rb"
       end
 
+      if options[:skip_sprockets] && !asset_manifest_exist
+        remove_file "app/assets/config/manifest.js"
+      end
+
+      if options[:skip_sprockets] && !asset_app_stylesheet_exist
+        remove_file "app/assets/stylesheets/application.css"
+      end
+
       unless rack_cors_config_exist
         remove_file "config/initializers/cors.rb"
       end
@@ -174,8 +184,8 @@ module Rails
           remove_file "config/initializers/content_security_policy.rb"
         end
 
-        unless feature_policy_config_exist
-          remove_file "config/initializers/feature_policy.rb"
+        unless permissions_policy_config_exist
+          remove_file "config/initializers/permissions_policy.rb"
         end
       end
     end
@@ -255,6 +265,11 @@ module Rails
     def config_target_version
       defined?(@config_target_version) ? @config_target_version : Rails::VERSION::STRING.to_f
     end
+
+    private
+      def user_default_branch
+        @user_default_branch ||= `git config init.defaultbranch`
+      end
   end
 
   module Generators
@@ -491,6 +506,8 @@ module Rails
       def delete_assets_initializer_skipping_sprockets
         if options[:skip_sprockets]
           remove_file "config/initializers/assets.rb"
+          remove_file "app/assets/config/manifest.js"
+          remove_file "app/assets/stylesheets/application.css"
         end
       end
 
@@ -527,7 +544,7 @@ module Rails
         if options[:api]
           remove_file "config/initializers/cookies_serializer.rb"
           remove_file "config/initializers/content_security_policy.rb"
-          remove_file "config/initializers/feature_policy.rb"
+          remove_file "config/initializers/permissions_policy.rb"
         end
       end
 
@@ -539,12 +556,8 @@ module Rails
 
       def delete_new_framework_defaults
         unless options[:update]
-          remove_file "config/initializers/new_framework_defaults_6_1.rb"
+          remove_file "config/initializers/new_framework_defaults_7_0.rb"
         end
-      end
-
-      def delete_bin_yarn
-        remove_file "bin/yarn" if options[:skip_javascript]
       end
 
       def finish_template
@@ -552,7 +565,7 @@ module Rails
       end
 
       public_task :apply_rails_template, :run_bundle
-      public_task :generate_bundler_binstub, :generate_spring_binstub
+      public_task :generate_bundler_binstub
       public_task :run_webpack
 
       def run_after_bundle_callbacks
@@ -606,7 +619,13 @@ module Rails
       end
 
       def self.default_rc_file
-        File.expand_path("~/.railsrc")
+        xdg_config_home = ENV["XDG_CONFIG_HOME"].presence || "~/.config"
+        xdg_railsrc = File.expand_path("rails/railsrc", xdg_config_home)
+        if File.exist?(xdg_railsrc)
+          xdg_railsrc
+        else
+          File.expand_path("~/.railsrc")
+        end
       end
 
       private

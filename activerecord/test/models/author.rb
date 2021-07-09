@@ -20,6 +20,50 @@ class Author < ActiveRecord::Base
       Rating.joins(:comment).merge(self)
     end
   end
+
+  has_many :comments_with_order, -> { ordered_by_post_id }, through: :posts, source: :comments
+  has_many :no_joins_comments, through: :posts, disable_joins: :true, source: :comments
+
+  has_many :comments_with_foreign_key, through: :posts, source: :comments, foreign_key: :post_id
+  has_many :no_joins_comments_with_foreign_key, through: :posts, disable_joins: :true, source: :comments, foreign_key: :post_id
+
+  has_many :members,
+    through: :comments_with_order,
+    source: :origin,
+    source_type: "Member"
+
+  has_many :no_joins_members,
+    through: :comments_with_order,
+    source: :origin,
+    source_type: "Member",
+    disable_joins: true
+
+  has_many :ordered_members,
+    -> { order(id: :desc) },
+    through: :comments_with_order,
+    source: :origin,
+    source_type: "Member"
+
+  has_many :no_joins_ordered_members,
+    -> { order(id: :desc) },
+    through: :comments_with_order,
+    source: :origin,
+    source_type: "Member",
+    disable_joins: true
+
+  has_many :ratings, through: :comments
+  has_many :good_ratings,
+    -> { where("ratings.value > 5") },
+    through: :comments,
+    source: :ratings
+
+  has_many :no_joins_ratings, through: :no_joins_comments, disable_joins: :true, source: :ratings
+  has_many :no_joins_good_ratings,
+    -> { where("ratings.value > 5") },
+    through: :comments,
+    source: :ratings,
+    disable_joins: true
+
   has_many :comments_containing_the_letter_e, through: :posts, source: :comments
   has_many :comments_with_order_and_conditions, -> { order("comments.body").where("comments.body like 'Thank%'") }, through: :posts, source: :comments
   has_many :comments_with_include, -> { includes(:post).where(posts: { type: "Post" }) }, through: :posts, source: :comments
@@ -62,6 +106,7 @@ class Author < ActiveRecord::Base
   has_many :hello_posts, -> { where "posts.body = 'hello'" }, class_name: "Post"
   has_many :hello_post_comments, through: :hello_posts, source: :comments
   has_many :posts_with_no_comments, -> { where("comments.id" => nil).includes(:comments) }, class_name: "Post"
+  has_many :posts_with_no_comments_2, -> { left_joins(:comments).where("comments.id": nil) }, class_name: "Post"
 
   has_many :hello_posts_with_hash_conditions, -> { where(body: "hello") }, class_name: "Post"
   has_many :hello_post_comments_with_hash_conditions, through: :hello_posts_with_hash_conditions, source: :comments
@@ -104,7 +149,7 @@ class Author < ActiveRecord::Base
   has_many :categorized_posts, through: :categorizations, source: :post
   has_many :unique_categorized_posts, -> { distinct }, through: :categorizations, source: :post
 
-  has_many :nothings, through: :kateggorisatons, class_name: "Category"
+  has_many :nothings, through: :kateggorizatons, class_name: "Category"
 
   has_many :author_favorites
   has_many :favorite_authors, -> { order("name") }, through: :author_favorites
@@ -160,8 +205,10 @@ class Author < ActiveRecord::Base
   has_many :posts_with_default_include, class_name: "PostWithDefaultInclude"
   has_many :comments_on_posts_with_default_include, through: :posts_with_default_include, source: :comments
 
-  has_many :posts_with_signature, ->(record) { where("posts.title LIKE ?", "%by #{record.name.downcase}%") }, class_name: "Post"
-  has_many :posts_mentioning_author, ->(record = nil) { where("posts.body LIKE ?", "%#{record&.name&.downcase}%") }, class_name: "Post"
+  has_many :posts_with_signature, ->(record) { where(arel_table[:title].matches("%by #{record.name.downcase}%")) }, class_name: "Post"
+  has_many :posts_mentioning_author, ->(record = nil) { where(arel_table[:body].matches("%#{record&.name&.downcase}%")) }, class_name: "Post"
+  has_many :comments_on_posts_mentioning_author, through: :posts_mentioning_author, source: :comments
+  has_many :comments_mentioning_author, ->(record) { where(arel_table[:body].matches("%#{record.name.downcase}%")) }, through: :posts, source: :comments
 
   has_one :recent_post, -> { order(id: :desc) }, class_name: "Post"
   has_one :recent_response, through: :recent_post, source: :comments
@@ -183,6 +230,7 @@ class Author < ActiveRecord::Base
 
   has_many :lazy_readers_skimmers_or_not, through: :posts
   has_many :lazy_readers_skimmers_or_not_2, through: :posts_with_no_comments, source: :lazy_readers_skimmers_or_not
+  has_many :lazy_readers_skimmers_or_not_3, through: :posts_with_no_comments_2, source: :lazy_readers_skimmers_or_not
 
   attr_accessor :post_log
   after_initialize :set_post_log

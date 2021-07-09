@@ -84,7 +84,7 @@ module ActionController
     #
     # If no <tt>options</tt> hash is passed or if <tt>:update</tt> is specified, then:
     #
-    # If an object responding to `render_in` is passed, `render_in` is called on the object,
+    # If an object responding to +render_in+ is passed, +render_in+ is called on the object,
     # passing in the current view context.
     #
     # Otherwise, a partial is rendered using the second parameter as the locals hash.
@@ -99,6 +99,7 @@ module ActionController
       instance.set_response! controller.make_response!(request)
       instance.render_to_string(*args)
     end
+    alias_method :render_to_string, :render # :nodoc:
 
     private
       def normalize_keys(defaults, env)

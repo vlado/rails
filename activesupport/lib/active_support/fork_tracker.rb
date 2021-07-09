@@ -3,7 +3,7 @@
 module ActiveSupport
   module ForkTracker # :nodoc:
     module CoreExt
-      def fork(*)
+      def fork(...)
         if block_given?
           super do
             ForkTracker.check!
@@ -20,7 +20,11 @@ module ActiveSupport
 
     module CoreExtPrivate
       include CoreExt
-      private :fork
+
+      private
+        def fork(...)
+          super
+        end
     end
 
     @pid = Process.pid

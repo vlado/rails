@@ -12,7 +12,7 @@ module ActiveRecord
         if value.is_a?(Base)
           ActiveSupport::Deprecation.warn(<<~MSG)
             Passing an Active Record object to `quote` directly is deprecated
-            and will be no longer quoted as id value in Rails 6.2.
+            and will be no longer quoted as id value in Rails 7.0.
           MSG
           value = value.id_for_database
         end
@@ -27,20 +27,27 @@ module ActiveRecord
         if value.is_a?(Base)
           ActiveSupport::Deprecation.warn(<<~MSG)
             Passing an Active Record object to `type_cast` directly is deprecated
-            and will be no longer type casted as id value in Rails 6.2.
+            and will be no longer type casted as id value in Rails 7.0.
           MSG
           value = value.id_for_database
         end
 
         if column
           ActiveSupport::Deprecation.warn(<<~MSG)
-            Passing a column to `type_cast` is deprecated and will be removed in Rails 6.2.
+            Passing a column to `type_cast` is deprecated and will be removed in Rails 7.0.
           MSG
           type = lookup_cast_type_from_column(column)
           value = type.serialize(value)
         end
 
         _type_cast(value)
+      end
+
+      # Quote a value to be used as a bound parameter of unknown type. For example,
+      # MySQL might perform dangerous castings when comparing a string to a number,
+      # so this method will cast numbers to string.
+      def quote_bound_value(value)
+        _quote(value)
       end
 
       # If you are having to call this function, you are likely doing something
@@ -59,7 +66,7 @@ module ActiveRecord
       # Quotes a string, escaping any ' (single quote) and \ (backslash)
       # characters.
       def quote_string(s)
-        s.gsub('\\', '\&\&').gsub("'", "''") # ' (for ruby-mode)
+        s.gsub("\\", '\&\&').gsub("'", "''") # ' (for ruby-mode)
       end
 
       # Quotes the column name. Defaults to no quoting.
@@ -113,10 +120,10 @@ module ActiveRecord
       # if the value is a Time responding to usec.
       def quoted_date(value)
         if value.acts_like?(:time)
-          if ActiveRecord::Base.default_timezone == :utc
-            value = value.getutc if value.respond_to?(:getutc) && !value.utc?
+          if ActiveRecord.default_timezone == :utc
+            value = value.getutc if !value.utc?
           else
-            value = value.getlocal if value.respond_to?(:getlocal)
+            value = value.getlocal
           end
         end
 

@@ -61,7 +61,15 @@ module ActiveRecord
       assert_equal expected, Post.order("body asc").where("id = 1").or(Post.order("body asc").where(id: [2, 3])).to_a
     end
 
-    def test_or_with_incompatible_relations
+    def test_or_with_incompatible_single_value_relations
+      error = assert_raises ArgumentError do
+        Post.distinct.where("id = 1").or(Post.where(id: [2, 3])).to_a
+      end
+
+      assert_equal "Relation passed to #or must be structurally compatible. Incompatible values: [:distinct]", error.message
+    end
+
+    def test_or_with_incompatible_multi_value_relations
       error = assert_raises ArgumentError do
         Post.order("body asc").where("id = 1").or(Post.order("id desc").where(id: [2, 3])).to_a
       end
@@ -125,9 +133,11 @@ module ActiveRecord
     end
 
     def test_or_with_non_relation_object_raises_error
-      assert_raises ArgumentError do
+      error = assert_raises ArgumentError do
         Post.where(id: [1, 2, 3]).or(title: "Rails")
       end
+
+      assert_equal "You have passed Hash object to #or. Pass an ActiveRecord::Relation object instead.", error.message
     end
 
     def test_or_with_references_inequality

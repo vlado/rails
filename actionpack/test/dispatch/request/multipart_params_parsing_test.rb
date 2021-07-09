@@ -4,12 +4,10 @@ require "abstract_unit"
 
 class MultipartParamsParsingTest < ActionDispatch::IntegrationTest
   class TestController < ActionController::Base
+    skip_parameter_encoding("parse_binary")
+
     class << self
       attr_accessor :last_request_parameters, :last_parameters
-
-      def binary_params_for?(action)
-        action == "parse_binary"
-      end
     end
 
     def parse_binary
@@ -159,7 +157,7 @@ class MultipartParamsParsingTest < ActionDispatch::IntegrationTest
   test "uploads and reads binary file" do
     with_test_routing do
       fixture = FIXTURE_PATH + "/ruby_on_rails.jpg"
-      params = { uploaded_data: fixture_file_upload(fixture, "image/jpg") }
+      params = { uploaded_data: fixture_file_upload(fixture, "image/jpeg") }
       post "/read", params: params
     end
   end

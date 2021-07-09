@@ -1,34 +1,25 @@
-*   Sendgrid ingress now passes through the envelope recipient as `X-Original-To`.
+*   Add ability to configure ActiveStorage service
+    for storing email raw source.
 
-    *Mark Haussmann*
+    ```yml
+    # config/storage.yml
+    incoming_emails:
+      service: Disk
+      root: /secure/dir/for/emails/only
+    ```
 
-*   Update Mandrill inbound email route to respond appropriately to HEAD requests for URL health checks from Mandrill.
+    ```ruby
+    config.action_mailbox.storage_service = :incoming_emails
+    ```
 
-    *Bill Cromie*
+    *Yurii Rashkovskii*
 
-*   Add way to deliver emails via source instead of filling out a form through the conductor interface.
+*   Add ability to incinerate an inbound message through the conductor interface.
 
-    *DHH*
+    *Santiago Bartesaghi*
 
-*   Mailgun ingress now passes through the envelope recipient as `X-Original-To`.
+*   OpenSSL constants are now used for Digest computations.
 
-    *Rikki Pitt*
+    *Dirkjan Bussink*
 
-*   Deprecate `Rails.application.credentials.action_mailbox.api_key` and `MAILGUN_INGRESS_API_KEY` in favor of `Rails.application.credentials.action_mailbox.signing_key` and `MAILGUN_INGRESS_SIGNING_KEY`.
-
-    *Matthijs Vos*
-
-*   Allow easier creation of multi-part emails from the `create_inbound_email_from_mail` and `receive_inbound_email_from_mail` test helpers.
-
-    *Michael Herold*
-
-*   Fix Bcc header not being included with emails from `create_inbound_email_from` test helpers.
-
-    *jduff*
-
-*   Add `ApplicationMailbox.mailbox_for` to expose mailbox routing.
-
-    *James Dabbs*
-
-
-Please check [6-0-stable](https://github.com/rails/rails/blob/6-0-stable/actionmailbox/CHANGELOG.md) for previous changes.
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actionmailbox/CHANGELOG.md) for previous changes.

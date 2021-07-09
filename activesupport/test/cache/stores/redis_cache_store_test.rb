@@ -136,7 +136,6 @@ module ActiveSupport::Cache::RedisCacheStoreTests
     include LocalCacheBehavior
     include CacheIncrementDecrementBehavior
     include CacheInstrumentationBehavior
-    include AutoloadingCacheBehavior
     include EncodedKeyCacheBehavior
 
     def test_fetch_multi_uses_redis_mget
@@ -199,6 +198,47 @@ module ActiveSupport::Cache::RedisCacheStoreTests
       assert_called_with @cache.redis, :expire, [ "#{@namespace}:dar", 60 ] do
         @cache.decrement "dar", 1, expires_in: 60
       end
+    end
+
+    def test_large_string_with_default_compression_settings
+      assert_compressed(LARGE_STRING)
+    end
+
+    def test_large_object_with_default_compression_settings
+      assert_compressed(LARGE_OBJECT)
+    end
+  end
+
+  class OptimizedRedisCacheStoreCommonBehaviorTest < RedisCacheStoreCommonBehaviorTest
+    def before_setup
+      @previous_format = ActiveSupport::Cache.format_version
+      ActiveSupport::Cache.format_version = 7.0
+      super
+    end
+
+    def test_forward_compatibility
+      previous_format = ActiveSupport::Cache.format_version
+      ActiveSupport::Cache.format_version = 6.1
+      @old_store = lookup_store
+      ActiveSupport::Cache.format_version = previous_format
+
+      @old_store.write("foo", "bar")
+      assert_equal "bar", @cache.read("foo")
+    end
+
+    def test_backward_compatibility
+      previous_format = ActiveSupport::Cache.format_version
+      ActiveSupport::Cache.format_version = 6.1
+      @old_store = lookup_store
+      ActiveSupport::Cache.format_version = previous_format
+
+      @cache.write("foo", "bar")
+      assert_equal "bar", @old_store.read("foo")
+    end
+
+    def after_teardown
+      super
+      ActiveSupport::Cache.format_version = @previous_format
     end
   end
 
@@ -322,7 +362,7 @@ module ActiveSupport::Cache::RedisCacheStoreTests
     test "does not compress values read with \"raw\" enabled" do
       @cache.write("foo", "bar", raw: true)
 
-      assert_not_called_on_instance_of ActiveSupport::Cache::Entry, :compress! do
+      assert_not_called_on_instance_of ActiveSupport::Cache::Entry, :compressed do
         @cache.read("foo", raw: true)
       end
     end

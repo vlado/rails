@@ -18,10 +18,16 @@ if ActiveRecord::Base.connection.supports_check_constraints?
             t.integer :price
             t.integer :quantity
           end
+
+          @connection.create_table "purchases", force: true do |t|
+            t.integer :price
+            t.integer :quantity
+          end
         end
 
         teardown do
-          @connection.drop_table "trades", if_exists: true
+          @connection.drop_table "trades", if_exists: true rescue nil
+          @connection.drop_table "purchases", if_exists: true rescue nil
         end
 
         def test_check_constraints
@@ -54,6 +60,32 @@ if ActiveRecord::Base.connection.supports_check_constraints?
           else
             assert_equal "quantity > 0", constraint.expression
           end
+        end
+
+        if supports_non_unique_constraint_name?
+          def test_add_constraint_with_same_name_to_different_table
+            @connection.add_check_constraint :trades, "quantity > 0", name: "greater_than_zero"
+            @connection.add_check_constraint :purchases, "quantity > 0", name: "greater_than_zero"
+
+            trades_check_constraints = @connection.check_constraints("trades")
+            assert_equal 1, trades_check_constraints.size
+            trade_constraint = trades_check_constraints.first
+            assert_equal "trades", trade_constraint.table_name
+            assert_equal "greater_than_zero", trade_constraint.name
+
+            purchases_check_constraints = @connection.check_constraints("purchases")
+            assert_equal 1, purchases_check_constraints.size
+            purchase_constraint = purchases_check_constraints.first
+            assert_equal "purchases", purchase_constraint.table_name
+            assert_equal "greater_than_zero", purchase_constraint.name
+          end
+        end
+
+        def test_add_check_constraint_with_non_existent_table_raises
+          e = assert_raises(ActiveRecord::StatementInvalid) do
+            @connection.add_check_constraint :refunds, "quantity > 0", name: "quantity_check"
+          end
+          assert_match(/refunds/, e.message)
         end
 
         def test_added_check_constraint_ensures_valid_values

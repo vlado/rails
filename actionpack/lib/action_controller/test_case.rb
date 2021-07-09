@@ -24,6 +24,9 @@ module ActionController
     def new_controller_thread # :nodoc:
       yield
     end
+
+    # Avoid a deadlock from the queue filling up
+    Buffer.queue_size = nil
   end
 
   # ActionController::TestCase will be deprecated and moved to a gem in the future.
@@ -74,21 +77,14 @@ module ActionController
       non_path_parameters = {}
       path_parameters = {}
 
-      if parameters[:format] == :json
-        parameters = JSON.load(JSON.dump(parameters))
-        query_string_keys = query_string_keys.map(&:to_s)
-      end
-
       parameters.each do |key, value|
         if query_string_keys.include?(key)
           non_path_parameters[key] = value
         else
-          unless parameters["format"] == "json"
-            if value.is_a?(Array)
-              value = value.map(&:to_param)
-            else
-              value = value.to_param
-            end
+          if value.is_a?(Array)
+            value = value.map(&:to_param)
+          else
+            value = value.to_param
           end
 
           path_parameters[key.to_sym] = value
@@ -216,6 +212,10 @@ module ActionController
 
     def fetch(key, *args, &block)
       @data.fetch(key.to_s, *args, &block)
+    end
+
+    def enabled?
+      true
     end
 
     private

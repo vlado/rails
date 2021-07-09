@@ -1,370 +1,155 @@
-*   Added support for exclusive no-store Cache-Control header.
+*   Deleting an item from the Middleware stack will raise if the item is not found
 
-    If `no-store` is set on Cache-Control header it is exclusive (all other cache directives are dropped).
+    Previously, calling `config.middleware.delete(ItemNotInMiddleware)` would fail silently.
+    Now it will raise, same as `config.middleware.move(0, ItemNotInMiddleware)` does.
 
-    *Chris Kruger*
+    *Alex Ghiculescu*
 
-*   Catch invalid UTF-8 parameters for POST requests and respond with BadRequest.
+*   OpenSSL constants are now used for Digest computations.
 
-    Additionally, perform `#set_binary_encoding` in `ActionDispatch::Http::Request#GET` and
-    `ActionDispatch::Http::Request#POST` prior to validating encoding.
+    *Dirkjan Bussink*
 
-    *Adrianna Chang*
+*   Remove IE6-7-8 file download related hack/fix from ActionController::DataStreaming module
 
-*   Allow `assert_recognizes` routing assertions to work on mounted root routes.
+    Due to the age of those versions of IE this fix is no longer relevant, more importantly it creates an edge-case for unexpected Cache-Control headers.
+
+    *Tadas Sasnauskas*
+
+*   Configuration setting to skip logging an uncaught exception backtrace when the exception is
+    present in `rescued_responses`.
+
+    It may be too noisy to get all backtraces logged for applications that manage uncaught
+    exceptions via `rescued_responses` and `exceptions_app`.
+    `config.action_dispatch.log_rescued_responses` (defaults to `true`) can be set to `false` in
+    this case, so that only exceptions not found in `rescued_responses` will be logged.
+
+    *Alexander Azarov*, *Mike Dalessio*
+
+*   Ignore file fixtures on `db:fixtures:load`
+
+    *Kevin Sjöberg*
+
+*   Fix ActionController::Live controller test deadlocks by removing the body buffer size limit for tests.
+
+    *Dylan Thacker-Smith*
+
+*   New `ActionController::ConditionalGet#no_store` method to set HTTP cache control `no-store` directive.
+
+    *Tadas Sasnauskas*
+
+*   Drop support for the `SERVER_ADDR` header
+
+    Following up https://github.com/rack/rack/pull/1573 and https://github.com/rails/rails/pull/42349
+
+    *Ricardo Díaz*
+
+*   Set session options when initializing a basic session.
 
     *Gannon McGibbon*
 
-*   Change default redirection status code for non-GET/HEAD requests to 308 Permanent Redirect for `ActionDispatch::SSL`.
+*   Add `cache_control: {}` option to `fresh_when` and `stale?`
 
-    *Alan Tan*, *Oz Ben-David*
+    Works as a shortcut to set `response.cache_control` with the above methods.
 
-*   Fix `follow_redirect!` to follow redirection with same HTTP verb when following
-    a 308 redirection.
+    *Jacopo Beschi*
 
-    *Alan Tan*
+*   Writing into a disabled session will now raise an error.
 
-*   When multiple domains are specified for a cookie, a domain will now be
-    chosen only if it is equal to or is a superdomain of the request host.
+    Previously when no session store was set, writing into the session would silently fail.
 
-    *Jonathan Hefner*
+    *Jean Boussier*
 
-*   `ActionDispatch::Static` handles precompiled Brotli (.br) files.
+*   Add support for 'require-trusted-types-for' and 'trusted-types' headers.
 
-    Adds to existing support for precompiled gzip (.gz) files.
-    Brotli files are preferred due to much better compression.
+    Fixes #42034
 
-    When the browser requests /some.js with `Accept-Encoding: br`,
-    we check for public/some.js.br and serve that file, if present, with
-    `Content-Encoding: br` and `Vary: Accept-Encoding` headers.
+    *lfalcao*
 
-    *Ryan Edward Hall*, *Jeremy Daer*
+*   Remove inline styles and address basic accessibility issues on rescue templates.
 
-*   Add raise_on_missing_translations support for controllers.
+    *Jacob Herrington*
 
-    This configuration determines whether an error should be raised for missing translations.
-    It can be enabled through `config.i18n.raise_on_missing_translations`. Note that described
-    configuration also affects raising error for missing translations in views.
+*   Add support for 'private, no-store' Cache-Control headers.
 
-    *fatkodima*
+    Previously, 'no-store' was exclusive; no other directives could be specified.
 
-*   Added `compact` and `compact!` to `ActionController::Parameters`.
+    *Alex Smith*
 
-    *Eugene Kenny*
+*   Expand payload of `unpermitted_parameters.action_controller` instrumentation to allow subscribers to
+    know which controller action received unpermitted parameters.
 
-*   Calling `each_pair` or `each_value` on an `ActionController::Parameters`
-    without passing a block now returns an enumerator.
+    *bbuchalter*
 
-    *Eugene Kenny*
-
-*   `fixture_file_upload` now uses path relative to `file_fixture_path`
-
-    Previously the path had to be relative to `fixture_path`.
-    You can change your existing code as follow:
+*   Add `ActionController::Live#send_stream` that makes it more convenient to send generated streams:
 
     ```ruby
-    # Before
-    fixture_file_upload('files/dog.png')
+    send_stream(filename: "subscribers.csv") do |stream|
+      stream.writeln "email_address,updated_at"
 
-    # After
-    fixture_file_upload('dog.png')
+      @subscribers.find_each do |subscriber|
+        stream.writeln [ subscriber.email_address, subscriber.updated_at ].join(",")
+      end
+    end
     ```
 
-    *Edouard Chin*
+    *DHH*
 
-*   Remove deprecated `force_ssl` at the controller level.
+*   Add `ActionController::Live::Buffer#writeln` to write a line to the stream with a newline included.
+
+    *DHH*
+
+*   `ActionDispatch::Request#content_type` now returned Content-Type header as it is.
+
+    Previously, `ActionDispatch::Request#content_type` returned value does NOT contain charset part.
+    This behavior changed to returned Content-Type header containing charset part as it is.
+
+    If you want just MIME type, please use `ActionDispatch::Request#media_type` instead.
+
+    Before:
+
+    ```ruby
+    request = ActionDispatch::Request.new("CONTENT_TYPE" => "text/csv; header=present; charset=utf-16", "REQUEST_METHOD" => "GET")
+    request.content_type #=> "text/csv"
+    ```
+
+    After:
+
+    ```ruby
+    request = ActionDispatch::Request.new("Content-Type" => "text/csv; header=present; charset=utf-16", "REQUEST_METHOD" => "GET")
+    request.content_type #=> "text/csv; header=present; charset=utf-16"
+    request.media_type   #=> "text/csv"
+    ```
 
     *Rafael Mendonça França*
 
-*   The +helper+ class method for controllers loads helper modules specified as
-    strings/symbols with `String#constantize` instead of `require_dependency`.
+*   Change `ActionDispatch::Request#media_type` to return `nil` when the request don't have a `Content-Type` header.
 
-    Remember that support for strings/symbols is only a convenient API. You can
-    always pass a module object:
+    *Rafael Mendonça França*
 
-    ```ruby
-    helper UtilsHelper
-    ```
+*   Fix error in `ActionController::LogSubscriber` that would happen when throwing inside a controller action.
 
-    which is recommended because it is simple and direct. When a string/symbol
-    is received, `helper` just manipulates and inflects the argument to obtain
-    that same module object.
+    *Janko Marohnić*
 
-    *Xavier Noria*, *Jean Boussier*
+*   Allow anything with `#to_str` (like `Addressable::URI`) as a `redirect_to` location
 
-*   Correctly identify the entire localhost IPv4 range as trusted proxy.
+    *ojab*
 
-    *Nick Soracco*
+*   Change the request method to a `GET` when passing failed requests down to `config.exceptions_app`.
 
-*   `url_for` will now use "https://" as the default protocol when
-    `Rails.application.config.force_ssl` is set to true.
+    *Alex Robbin*
 
-    *Jonathan Hefner*
+*   Deprecate the ability to assign a single value to `config.action_dispatch.trusted_proxies`
+    as `RemoteIp` middleware behaves inconsistently depending on whether this is configured
+    with a single value or an enumerable.
 
-*   Accept and default to base64_urlsafe CSRF tokens.
+    Fixes #40772
 
-    Base64 strict-encoded CSRF tokens are not inherently websafe, which makes
-    them difficult to deal with. For example, the common practice of sending
-    the CSRF token to a browser in a client-readable cookie does not work properly
-    out of the box: the value has to be url-encoded and decoded to survive transport.
+    *Christian Sutter*
 
-    Now, we generate Base64 urlsafe-encoded CSRF tokens, which are inherently safe
-    to transport. Validation accepts both urlsafe tokens, and strict-encoded tokens
-    for backwards compatibility.
+*   Add `redirect_back_or_to(fallback_location, **)` as a more aesthetically pleasing version of `redirect_back fallback_location:, **`.
+    The old method name is retained without explicit deprecation.
 
-    *Scott Blum*
+    *DHH*
 
-*   Support rolling deploys for cookie serialization/encryption changes.
 
-    In a distributed configuration like rolling update, users may observe
-    both old and new instances during deployment. Users may be served by a
-    new instance and then by an old instance.
-
-    That means when the server changes `cookies_serializer` from `:marshal`
-    to `:hybrid` or the server changes `use_authenticated_cookie_encryption`
-    from `false` to `true`, users may lose their sessions if they access the
-    server during deployment.
-
-    We added fallbacks to downgrade the cookie format when necessary during
-    deployment, ensuring compatibility on both old and new instances.
-
-    *Masaki Hara*
-
-*   `ActionDispatch::Request.remote_ip` has ip address even when all sites are trusted.
-
-    Before, if all `X-Forwarded-For` sites were trusted, the `remote_ip` would default to `127.0.0.1`.
-    Now, the furthest proxy site is used. e.g.: It now gives an ip address when using curl from the load balancer.
-
-    *Keenan Brock*
-
-*   Fix possible information leak / session hijacking vulnerability.
-
-    The `ActionDispatch::Session::MemcacheStore` is still vulnerable given it requires the
-    gem dalli to be updated as well.
-
-    CVE-2019-16782.
-
-*   Include child session assertion count in ActionDispatch::IntegrationTest.
-
-    `IntegrationTest#open_session` uses `dup` to create the new session, which
-    meant it had its own copy of `@assertions`. This prevented the assertions
-    from being correctly counted and reported.
-
-    Child sessions now have their `attr_accessor` overridden to delegate to the
-    root session.
-
-    Fixes #32142.
-
-    *Sam Bostock*
-
-*   Add SameSite protection to every written cookie.
-
-    Enabling `SameSite` cookie protection is an addition to CSRF protection,
-    where cookies won't be sent by browsers in cross-site POST requests when set to `:lax`.
-
-    `:strict` disables cookies being sent in cross-site GET or POST requests.
-
-    Passing `:none` disables this protection and is the same as previous versions albeit a `; SameSite=None` is appended to the cookie.
-
-    See upgrade instructions in config/initializers/new_framework_defaults_6_1.rb.
-
-    More info [here](https://tools.ietf.org/html/draft-west-first-party-cookies-07)
-
-    _NB: Technically already possible as Rack supports SameSite protection, this is to ensure it's applied to all cookies_
-
-    *Cédric Fabianski*
-
-*   Bring back the feature that allows loading external route files from the router.
-
-    This feature existed back in 2012 but got reverted with the incentive that
-    https://github.com/rails/routing_concerns was a better approach. Turned out
-    that this wasn't fully the case and loading external route files from the router
-    can be helpful for applications with a really large set of routes.
-    Without this feature, application needs to implement routes reloading
-    themselves and it's not straightforward.
-
-    ```ruby
-    # config/routes.rb
-
-    Rails.application.routes.draw do
-      draw(:admin)
-    end
-
-    # config/routes/admin.rb
-
-    get :foo, to: 'foo#bar'
-    ```
-
-    *Yehuda Katz*, *Edouard Chin*
-
-*   Fix system test driver option initialization for non-headless browsers.
-
-    *glaszig*
-
-*   `redirect_to.action_controller` notifications now include the `ActionDispatch::Request` in
-    their payloads as `:request`.
-
-    *Austin Story*
-
-*   `respond_to#any` no longer returns a response's Content-Type based on the
-    request format but based on the block given.
-
-    Example:
-
-    ```ruby
-      def my_action
-        respond_to do |format|
-          format.any { render(json: { foo: 'bar' }) }
-        end
-      end
-
-      get('my_action.csv')
-    ```
-
-    The previous behaviour was to respond with a `text/csv` Content-Type which
-    is inaccurate since a JSON response is being rendered.
-
-    Now it correctly returns a `application/json` Content-Type.
-
-    *Edouard Chin*
-
-*   Replaces (back)slashes in failure screenshot image paths with dashes.
-
-    If a failed test case contained a slash or a backslash, a screenshot would be created in a
-    nested directory, causing issues with `tmp:clear`.
-
-    *Damir Zekic*
-
-*   Add `params.member?` to mimic Hash behavior.
-
-    *Younes Serraj*
-
-*   `process_action.action_controller` notifications now include the following in their payloads:
-
-    * `:request` - the `ActionDispatch::Request`
-    * `:response` - the `ActionDispatch::Response`
-
-    *George Claghorn*
-
-*   Updated `ActionDispatch::Request.remote_ip` setter to clear set the instance
-    `remote_ip` to `nil` before setting the header that the value is derived
-    from.
-
-    Fixes #37383.
-
-    *Norm Provost*
-
-*   `ActionController::Base.log_at` allows setting a different log level per request.
-
-    ```ruby
-    # Use the debug level if a particular cookie is set.
-    class ApplicationController < ActionController::Base
-      log_at :debug, if: -> { cookies[:debug] }
-    end
-    ```
-
-    *George Claghorn*
-
-*   Allow system test screen shots to be taken more than once in
-    a test by prefixing the file name with an incrementing counter.
-
-    Add an environment variable `RAILS_SYSTEM_TESTING_SCREENSHOT_HTML` to
-    enable saving of HTML during a screenshot in addition to the image.
-    This uses the same image name, with the extension replaced with `.html`
-
-    *Tom Fakes*
-
-*   Add `Vary: Accept` header when using `Accept` header for response.
-
-    For some requests like `/users/1`, Rails uses requests' `Accept`
-    header to determine what to return. And if we don't add `Vary`
-    in the response header, browsers might accidentally cache different
-    types of content, which would cause issues: e.g. javascript got displayed
-    instead of html content. This PR fixes these issues by adding `Vary: Accept`
-    in these types of requests. For more detailed problem description, please read:
-
-    https://github.com/rails/rails/pull/36213
-
-    Fixes #25842.
-
-    *Stan Lo*
-
-*   Fix IntegrationTest `follow_redirect!` to follow redirection using the same HTTP verb when following
-    a 307 redirection.
-
-    *Edouard Chin*
-
-*   System tests require Capybara 3.26 or newer.
-
-    *George Claghorn*
-
-*   Reduced log noise handling ActionController::RoutingErrors.
-
-    *Alberto Fernández-Capel*
-
-*   Add DSL for configuring HTTP Feature Policy.
-
-    This new DSL provides a way to configure an HTTP Feature Policy at a
-    global or per-controller level. Full details of HTTP Feature Policy
-    specification and guidelines can be found at MDN:
-
-    https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Feature-Policy
-
-    Example global policy:
-
-    ```ruby
-    Rails.application.config.feature_policy do |f|
-      f.camera      :none
-      f.gyroscope   :none
-      f.microphone  :none
-      f.usb         :none
-      f.fullscreen  :self
-      f.payment     :self, "https://secure.example.com"
-    end
-    ```
-
-    Example controller level policy:
-
-    ```ruby
-    class PagesController < ApplicationController
-      feature_policy do |p|
-        p.geolocation "https://example.com"
-      end
-    end
-    ```
-
-    *Jacob Bednarz*
-
-*   Add the ability to set the CSP nonce only to the specified directives.
-
-    Fixes #35137.
-
-    *Yuji Yaginuma*
-
-*   Keep part when scope option has value.
-
-    When a route was defined within an optional scope, if that route didn't
-    take parameters the scope was lost when using path helpers. This commit
-    ensures scope is kept both when the route takes parameters or when it
-    doesn't.
-
-    Fixes #33219.
-
-    *Alberto Almagro*
-
-*   Added `deep_transform_keys` and `deep_transform_keys!` methods to ActionController::Parameters.
-
-    *Gustavo Gutierrez*
-
-*   Calling `ActionController::Parameters#transform_keys`/`!` without a block now returns
-    an enumerator for the parameters instead of the underlying hash.
-
-    *Eugene Kenny*
-
-*   Fix strong parameters blocks all attributes even when only some keys are invalid (non-numerical).
-    It should only block invalid key's values instead.
-
-    *Stan Lo*
-
-
-Please check [6-0-stable](https://github.com/rails/rails/blob/6-0-stable/actionpack/CHANGELOG.md) for previous changes.
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actionpack/CHANGELOG.md) for previous changes.

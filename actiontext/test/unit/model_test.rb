@@ -32,14 +32,14 @@ class ActionText::ModelTest < ActiveSupport::TestCase
   end
 
   test "embed extraction" do
-    blob = create_file_blob(filename: "racecar.jpg", content_type: "image/jpg")
+    blob = create_file_blob(filename: "racecar.jpg", content_type: "image/jpeg")
     message = Message.create!(subject: "Greetings", content: ActionText::Content.new("Hello world").append_attachables(blob))
     assert_equal "racecar.jpg", message.content.embeds.first.filename.to_s
   end
 
   test "embed extraction only extracts file attachments" do
     remote_image_html = '<action-text-attachment content-type="image" url="http://example.com/cat.jpg"></action-text-attachment>'
-    blob = create_file_blob(filename: "racecar.jpg", content_type: "image/jpg")
+    blob = create_file_blob(filename: "racecar.jpg", content_type: "image/jpeg")
     content = ActionText::Content.new(remote_image_html).append_attachables(blob)
     message = Message.create!(subject: "Greetings", content: content)
     assert_equal [ActionText::Attachables::RemoteImage, ActiveStorage::Blob], message.content.body.attachables.map(&:class)
@@ -47,7 +47,7 @@ class ActionText::ModelTest < ActiveSupport::TestCase
   end
 
   test "embed extraction deduplicates file attachments" do
-    blob = create_file_blob(filename: "racecar.jpg", content_type: "image/jpg")
+    blob = create_file_blob(filename: "racecar.jpg", content_type: "image/jpeg")
     content = ActionText::Content.new("Hello world").append_attachables([ blob, blob ])
 
     assert_nothing_raised do
@@ -84,6 +84,25 @@ class ActionText::ModelTest < ActiveSupport::TestCase
 
     assert_no_difference -> { ActionText::RichText.count } do
       assert_kind_of ActionText::RichText, message.content
+    end
+  end
+
+  test "eager loading" do
+    Message.create!(subject: "Subject", content: "<h1>Content</h1>")
+
+    message = assert_queries(2) { Message.with_rich_text_content.last }
+    assert_no_queries do
+      assert_equal "Content", message.content.to_plain_text
+    end
+  end
+
+  test "eager loading all rich text" do
+    Message.create!(subject: "Subject", content: "<h1>Content</h1>", body: "<h2>Body</h2>")
+
+    message = assert_queries(1) { Message.with_all_rich_text.last }
+    assert_no_queries do
+      assert_equal "Content", message.content.to_plain_text
+      assert_equal "Body", message.body.to_plain_text
     end
   end
 end

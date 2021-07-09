@@ -3,6 +3,7 @@
 require "cases/helper"
 require "models/author"
 require "models/book"
+require "models/cart"
 require "models/speedometer"
 require "models/subscription"
 require "models/subscriber"
@@ -108,6 +109,13 @@ class InsertAllTest < ActiveRecord::TestCase
     assert_equal %w[ Rework ], result.pluck("name")
   end
 
+  def test_insert_all_returns_requested_sql_fields
+    skip unless supports_insert_returning?
+
+    result = Book.insert_all! [{ name: "Rework", author_id: 1 }], returning: Arel.sql("UPPER(name) as name")
+    assert_equal %w[ REWORK ], result.pluck("name")
+  end
+
   def test_insert_all_can_skip_duplicate_records
     skip unless supports_insert_on_duplicate_skip?
 
@@ -208,6 +216,33 @@ class InsertAllTest < ActiveRecord::TestCase
     end
   end
 
+  def test_insert_all_and_upsert_all_works_with_composite_primary_keys_when_unique_by_is_provided
+    skip unless supports_insert_conflict_target?
+
+    assert_difference "Cart.count", 2 do
+      Cart.insert_all [{ id: 1, shop_id: 1, title: "My cart" }], unique_by: [:shop_id, :id]
+
+      Cart.upsert_all [{ id: 3, shop_id: 2, title: "My other cart" }], unique_by: [:shop_id, :id]
+    end
+
+    error = assert_raises ArgumentError do
+      Cart.insert_all! [{ id: 2, shop_id: 1, title: "My cart" }]
+    end
+    assert_match "No unique index found for id", error.message
+  end
+
+  def test_insert_all_and_upsert_all_works_with_composite_primary_keys_when_unique_by_is_not_provided
+    skip unless supports_insert_on_duplicate_skip? && !supports_insert_conflict_target?
+
+    assert_difference "Cart.count", 3 do
+      Cart.insert_all [{ id: 1, shop_id: 1, title: "My cart" }]
+
+      Cart.insert_all! [{ id: 2, shop_id: 1, title: "My cart 2" }]
+
+      Cart.upsert_all [{ id: 3, shop_id: 2, title: "My other cart" }]
+    end
+  end
+
   def test_insert_logs_message_including_model_name
     skip unless supports_insert_conflict_target?
 
@@ -260,8 +295,18 @@ class InsertAllTest < ActiveRecord::TestCase
     assert_equal "New edition", Book.find(1).name
   end
 
-  def test_upsert_all_updates_existing_record_by_configured_primary_key
-    skip unless supports_insert_on_duplicate_update?
+  def test_upsert_all_does_notupdates_existing_record_by_when_there_is_no_key
+    skip unless supports_insert_on_duplicate_update? && !supports_insert_conflict_target?
+
+    Speedometer.create!(speedometer_id: "s3", name: "Very fast")
+
+    Speedometer.upsert_all [{ speedometer_id: "s3", name: "New Speedometer" }]
+
+    assert_equal "Very fast", Speedometer.find("s3").name
+  end
+
+  def test_upsert_all_updates_existing_record_by_configured_primary_key_fails_when_database_supports_insert_conflict_target
+    skip unless supports_insert_on_duplicate_update? && supports_insert_conflict_target?
 
     error = assert_raises ArgumentError do
       Speedometer.upsert_all [{ speedometer_id: "s1", name: "New Speedometer" }]
@@ -426,6 +471,28 @@ class InsertAllTest < ActiveRecord::TestCase
   def test_upsert_all_has_many_through
     book = Book.first
     assert_raise(ArgumentError) { book.subscribers.upsert_all([ { nick: "Jimmy" } ]) }
+  end
+
+  def test_upsert_all_updates_using_provided_sql
+    skip unless supports_insert_on_duplicate_update?
+
+    operator = current_adapter?(:SQLite3Adapter) ? "MAX" : "GREATEST"
+
+    Book.upsert_all(
+      [{ id: 1, status: 1 }, { id: 2, status: 1 }],
+      on_duplicate: Arel.sql("status = #{operator}(books.status, 1)")
+    )
+    assert_equal "published", Book.find(1).status
+    assert_equal "written", Book.find(2).status
+  end
+
+  def test_upsert_all_with_unique_by_fails_cleanly_for_adapters_not_supporting_insert_conflict_target
+    skip if supports_insert_conflict_target?
+
+    error = assert_raises ArgumentError do
+      Book.upsert_all [{ name: "Rework", author_id: 1 }], unique_by: :isbn
+    end
+    assert_match "#{ActiveRecord::Base.connection.class} does not support :unique_by", error.message
   end
 
   private

@@ -189,8 +189,8 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
         end
 
         teardown do
-          @connection.drop_table "astronauts", if_exists: true
-          @connection.drop_table "rockets", if_exists: true
+          @connection.drop_table "astronauts", if_exists: true rescue nil
+          @connection.drop_table "rockets", if_exists: true rescue nil
         end
 
         def test_foreign_keys
@@ -306,6 +306,20 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
 
           fk = foreign_keys.first
           assert_equal :nullify, fk.on_update
+        end
+
+        def test_add_foreign_key_with_non_existent_from_table_raises
+          e = assert_raises StatementInvalid do
+            @connection.add_foreign_key :missions, :rockets
+          end
+          assert_match(/missions/, e.message)
+        end
+
+        def test_add_foreign_key_with_non_existent_to_table_raises
+          e = assert_raises StatementInvalid do
+            @connection.add_foreign_key :missions, :rockets
+          end
+          assert_match(/missions/, e.message)
         end
 
         def test_foreign_key_exists
@@ -560,6 +574,67 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
         ensure
           silence_stream($stdout) { migration.migrate(:down) }
           ActiveRecord::Base.table_name_suffix = nil
+        end
+
+        def test_remove_foreign_key_with_if_exists_not_set
+          @connection.add_foreign_key :astronauts, :rockets
+          assert_equal 1, @connection.foreign_keys("astronauts").size
+
+          @connection.remove_foreign_key :astronauts, :rockets
+          assert_equal [], @connection.foreign_keys("astronauts")
+
+          error = assert_raises do
+            @connection.remove_foreign_key :astronauts, :rockets
+          end
+
+          assert_equal("Table 'astronauts' has no foreign key for rockets", error.message)
+        end
+
+        def test_remove_foreign_key_with_if_exists_set
+          @connection.add_foreign_key :astronauts, :rockets
+          assert_equal 1, @connection.foreign_keys("astronauts").size
+
+          @connection.remove_foreign_key :astronauts, :rockets
+          assert_equal [], @connection.foreign_keys("astronauts")
+
+          assert_nothing_raised do
+            @connection.remove_foreign_key :astronauts, :rockets, if_exists: true
+          end
+        end
+
+        def test_add_foreign_key_with_if_not_exists_not_set
+          @connection.add_foreign_key :astronauts, :rockets
+          assert_equal 1, @connection.foreign_keys("astronauts").size
+
+          if current_adapter?(:SQLite3Adapter)
+            assert_nothing_raised do
+              @connection.add_foreign_key :astronauts, :rockets
+            end
+          else
+            error = assert_raises do
+              @connection.add_foreign_key :astronauts, :rockets
+            end
+
+            if current_adapter?(:Mysql2Adapter)
+              if ActiveRecord::Base.connection.mariadb?
+                assert_match(/Duplicate key on write or update/, error.message)
+              else
+                assert_match(/Duplicate foreign key constraint name/, error.message)
+              end
+            else
+              assert_match(/PG::DuplicateObject: ERROR:.*for relation "astronauts" already exists/, error.message)
+            end
+
+          end
+        end
+
+        def test_add_foreign_key_with_if_not_exists_set
+          @connection.add_foreign_key :astronauts, :rockets
+          assert_equal 1, @connection.foreign_keys("astronauts").size
+
+          assert_nothing_raised do
+            @connection.add_foreign_key :astronauts, :rockets, if_not_exists: true
+          end
         end
       end
     end

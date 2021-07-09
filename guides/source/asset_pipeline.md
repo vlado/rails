@@ -65,7 +65,6 @@ config.assets.js_compressor = :uglifier
 NOTE: The `sass-rails` gem is automatically used for CSS compression if included
 in the `Gemfile` and no `config.assets.css_compressor` option is set.
 
-
 ### Main Features
 
 The first feature of the pipeline is to concatenate assets, which can reduce the
@@ -126,7 +125,7 @@ The query string strategy has several disadvantages:
 query parameters**
 
     [Steve Souders recommends](https://www.stevesouders.com/blog/2008/08/23/revving-filenames-dont-use-querystring/),
- "...avoiding a querystring for cacheable resources". He found that in this
+"...avoiding a querystring for cacheable resources". He found that in this
 case 5-20% of requests will not be cached. Query strings in particular do not
 work at all with some CDNs for cache invalidation.
 
@@ -408,17 +407,10 @@ If you add an `erb` extension to a JavaScript asset, making it something such as
 JavaScript code:
 
 ```js
-$('#logo').attr({ src: "<%= asset_path('logo.png') %>" });
+document.getElementById('logo').src = "<%= asset_path('logo.png') %>"
 ```
 
 This writes the path to the particular asset being referenced.
-
-Similarly, you can use the `asset_path` helper in CoffeeScript files with `erb`
-extension (e.g., `application.coffee.erb`):
-
-```js
-$('#logo').attr src: "<%= asset_path('logo.png') %>"
-```
 
 ### Manifest Files and Directives
 
@@ -468,9 +460,9 @@ which contains these lines:
 
 ```css
 /* ...
-*= require_self
-*= require_tree .
-*/
+ *= require_self
+ *= require_tree .
+ */
 ```
 
 Rails creates `app/assets/stylesheets/application.css` regardless of whether the
@@ -501,10 +493,10 @@ might concatenate three CSS files together this way:
 
 ```js
 /* ...
-*= require reset
-*= require layout
-*= require chrome
-*/
+ *= require reset
+ *= require layout
+ *= require chrome
+ */
 ```
 
 ### Preprocessing
@@ -643,8 +635,7 @@ generates something like this:
 
 ```html
 <script src="/assets/application-908e25f4bf641868d8683022a5b62f54.js"></script>
-<link href="/assets/application-4dd5b109ee3439da54f5bdfd78a80473.css" media="screen"
-rel="stylesheet" />
+<link href="/assets/application-4dd5b109ee3439da54f5bdfd78a80473.css" rel="stylesheet" />
 ```
 
 NOTE: with the Asset Pipeline the `:cache` and `:concat` options aren't used
@@ -789,23 +780,23 @@ $ RAILS_ENV=production rails assets:precompile
 
 Note the following caveats:
 
-* If precompiled assets are available, they will be served — even if they no
-  longer match the original (uncompiled) assets, _even on the development
-  server._
+*   If precompiled assets are available, they will be served — even if they no
+    longer match the original (uncompiled) assets, _even on the development
+    server._
 
-  To ensure that the development server always compiles assets on-the-fly (and
-  thus always reflects the most recent state of the code), the development
-  environment _must be configured to keep precompiled assets in a different
-  location than production does._ Otherwise, any assets precompiled for use in
-  production will clobber requests for them in development (_i.e.,_ subsequent
-  changes you make to assets will not be reflected in the browser).
+    To ensure that the development server always compiles assets on-the-fly (and
+    thus always reflects the most recent state of the code), the development
+    environment _must be configured to keep precompiled assets in a different
+    location than production does._ Otherwise, any assets precompiled for use in
+    production will clobber requests for them in development (_i.e.,_ subsequent
+    changes you make to assets will not be reflected in the browser).
 
-  You can do this by adding the following line to
-  `config/environments/development.rb`:
+    You can do this by adding the following line to
+    `config/environments/development.rb`:
 
-  ```ruby
-  config.assets.prefix = "/dev-assets"
-  ```
+    ```ruby
+    config.assets.prefix = "/dev-assets"
+    ```
 * The asset precompile task in your deployment tool (_e.g.,_ Capistrano) should
   be disabled.
 * Any necessary compressors or minifiers must be available on your development
@@ -882,11 +873,11 @@ valid CDN provider at the time of this writing). Now that you have configured
 your CDN server, you need to tell browsers to use your CDN to grab assets
 instead of your Rails server directly. You can do this by configuring Rails to
 set your CDN as the asset host instead of using a relative path. To set your
-asset host in Rails, you need to set `config.action_controller.asset_host` in
+asset host in Rails, you need to set `config.asset_host` in
 `config/environments/production.rb`:
 
 ```ruby
-config.action_controller.asset_host = 'mycdnsubdomain.fictional-cdn.com'
+config.asset_host = 'mycdnsubdomain.fictional-cdn.com'
 ```
 
 NOTE: You only need to provide the "host", this is the subdomain and root
@@ -899,7 +890,7 @@ variable](https://en.wikipedia.org/wiki/Environment_variable) to make running a
 staging copy of your site easier:
 
 ```ruby
-config.action_controller.asset_host = ENV['CDN_HOST']
+config.asset_host = ENV['CDN_HOST']
 ```
 
 
@@ -1025,7 +1016,7 @@ asset for up to a year. Since most CDNs also cache headers of the request, this
 the browser then knows that it can store this asset for a very long time before
 needing to re-request it.
 
-##### CDNs and URL based Cache Invalidation
+##### CDNs and URL-based Cache Invalidation
 
 Most CDNs will cache contents of an asset based on the complete URL. This means
 that a request to
@@ -1064,6 +1055,7 @@ gem.
 ```ruby
 config.assets.css_compressor = :yui
 ```
+
 The other option for compressing CSS if you have the sass-rails gem installed is
 
 ```ruby
@@ -1072,27 +1064,25 @@ config.assets.css_compressor = :sass
 
 ### JavaScript Compression
 
-Possible options for JavaScript compression are `:closure`, `:uglifier` and
-`:yui`. These require the use of the `closure-compiler`, `uglifier` or
+Possible options for JavaScript compression are `:terser`, `:closure`, `:uglifier` and
+`:yui`. These require the use of the `terser`, `closure-compiler`, `uglifier` or
 `yui-compressor` gems, respectively.
 
-Take the `uglifier` gem, for example.
-This gem wraps [UglifyJS](https://github.com/mishoo/UglifyJS) (written for
+Take the `terser` gem, for example.
+This gem wraps [Terser](https://github.com/terser/terser) (written for
 NodeJS) in Ruby. It compresses your code by removing white space and comments,
 shortening local variable names, and performing other micro-optimizations such
 as changing `if` and `else` statements to ternary operators where possible.
 
-The following line invokes `uglifier` for JavaScript compression.
+The following line invokes `terser` for JavaScript compression.
 
 ```ruby
-config.assets.js_compressor = :uglifier
+config.assets.js_compressor = :terser
 ```
 
 NOTE: You will need an [ExecJS](https://github.com/rails/execjs#readme)
-supported runtime in order to use `uglifier`. If you are using macOS or
+supported runtime in order to use `terser`. If you are using macOS or
 Windows you have a JavaScript runtime installed in your operating system.
-
-
 
 ### GZipping your assets
 
@@ -1125,7 +1115,6 @@ To enable this, pass a new object to the config option in `application.rb`:
 ```ruby
 config.assets.css_compressor = Transformer.new
 ```
-
 
 ### Changing the _assets_ Path
 

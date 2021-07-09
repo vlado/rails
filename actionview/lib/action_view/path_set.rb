@@ -48,24 +48,12 @@ module ActionView #:nodoc:
       find_all(*args).first || raise(MissingTemplate.new(self, *args))
     end
 
-    alias :find_file :find
-    deprecate :find_file
-
     def find_all(path, prefixes = [], *args)
       _find_all path, prefixes, args
     end
 
     def exists?(path, prefixes, *args)
       find_all(path, prefixes, *args).any?
-    end
-
-    def find_all_with_query(query) # :nodoc:
-      paths.each do |resolver|
-        templates = resolver.find_all_with_query(query)
-        return templates unless templates.empty?
-      end
-
-      []
     end
 
     private
@@ -84,7 +72,7 @@ module ActionView #:nodoc:
         paths.map do |path|
           case path
           when Pathname, String
-            OptimizedFileSystemResolver.new path.to_s
+            FileSystemResolver.new path.to_s
           else
             path
           end

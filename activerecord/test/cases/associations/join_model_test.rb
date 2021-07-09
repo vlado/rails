@@ -341,13 +341,11 @@ class AssociationsJoinModelTest < ActiveRecord::TestCase
     assert_raise(ActiveRecord::HasManyThroughAssociationNotFoundError) { authors(:david).nothings }
   end
 
-  if defined?(DidYouMean) && DidYouMean.respond_to?(:correct_error)
-    def test_exceptions_have_suggestions_for_fix
-      error = assert_raise(ActiveRecord::HasManyThroughAssociationNotFoundError) {
-        authors(:david).nothings
-      }
-      assert_match "Did you mean?", error.message
-    end
+  def test_exceptions_have_suggestions_for_fix
+    error = assert_raise(ActiveRecord::HasManyThroughAssociationNotFoundError) {
+      authors(:david).nothings
+    }
+    assert_match "Did you mean?", error.message
   end
 
   def test_has_many_through_join_model_with_conditions
@@ -432,7 +430,7 @@ class AssociationsJoinModelTest < ActiveRecord::TestCase
     author = Author.all.merge!(where: ["name = ?", "David"], includes: :comments, order: "comments.id").first
     SpecialComment.new; VerySpecialComment.new
     assert_no_queries do
-      assert_equal [1, 2, 3, 5, 6, 7, 8, 9, 10, 12], author.comments.collect(&:id)
+      assert_equal [1, 2, 3, 5, 6, 7, 8, 9, 10, 12, 13], author.comments.collect(&:id)
     end
   end
 
@@ -537,7 +535,7 @@ class AssociationsJoinModelTest < ActiveRecord::TestCase
 
   def test_has_many_through_collection_size_doesnt_load_target_if_not_loaded
     author = authors(:david)
-    assert_equal 10, author.comments.size
+    assert_equal 11, author.comments.size
     assert_not_predicate author.comments, :loaded?
   end
 
@@ -748,7 +746,7 @@ class AssociationsJoinModelTest < ActiveRecord::TestCase
     sub_sti_post = SubStiPost.create!(title: "test", body: "test", author_id: 1)
     new_comment = sub_sti_post.comments.create(body: "test")
 
-    assert_equal [9, 10, new_comment.id], authors(:david).sti_post_comments.map(&:id).sort
+    assert_equal [9, 10, 13, new_comment.id], authors(:david).sti_post_comments.map(&:id).sort
   end
 
   def test_has_many_with_pluralize_table_names_false

@@ -1,6 +1,23 @@
 # frozen_string_literal: true
 
 module LocalCacheBehavior
+  def test_instrumentation_with_local_cache
+    events = with_instrumentation "write" do
+      @cache.write("foo", "bar")
+    end
+    assert_equal @cache.class.name, events[0].payload[:store]
+
+    events = with_instrumentation "read" do
+      @cache.with_local_cache do
+        @cache.read("foo")
+        @cache.read("foo")
+      end
+    end
+
+    expected = [@cache.class.name, "ActiveSupport::Cache::Strategy::LocalCache::LocalStore"]
+    assert_equal expected, events.map { |p| p.payload[:store] }
+  end
+
   def test_local_writes_are_persistent_on_the_remote_cache
     retval = @cache.with_local_cache do
       @cache.write("foo", "bar")
@@ -102,6 +119,24 @@ module LocalCacheBehavior
     end
   end
 
+  def test_local_cache_of_delete_matched
+    begin
+      @cache.delete_matched("*")
+    rescue NotImplementedError
+      skip
+    end
+
+    @cache.with_local_cache do
+      @cache.write("foo", "bar")
+      @cache.write("fop", "bar")
+      @cache.write("bar", "foo")
+      @cache.delete_matched("fo*")
+      assert_not @cache.exist?("foo")
+      assert_not @cache.exist?("fop")
+      assert_equal "foo", @cache.read("bar")
+    end
+  end
+
   def test_local_cache_of_exist
     @cache.with_local_cache do
       @cache.write("foo", "bar")
@@ -178,5 +213,26 @@ module LocalCacheBehavior
     }
     app = @cache.middleware.new(app)
     app.call({})
+  end
+
+  def test_local_race_condition_protection
+    @cache.with_local_cache do
+      time = Time.now
+      @cache.write("foo", "bar", expires_in: 60)
+      Time.stub(:now, time + 61) do
+        result = @cache.fetch("foo", race_condition_ttl: 10) do
+          assert_equal "bar", @cache.read("foo")
+          "baz"
+        end
+        assert_equal "baz", result
+      end
+    end
+  end
+
+  def test_local_cache_should_read_and_write_false
+    @cache.with_local_cache do
+      assert @cache.write("foo", false)
+      assert_equal false, @cache.read("foo")
+    end
   end
 end

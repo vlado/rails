@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "mimemagic"
+require "mini_mime"
 
 module ActiveStorage::Blob::Representable
   extend ActiveSupport::Concern
@@ -12,8 +12,8 @@ module ActiveStorage::Blob::Representable
     has_one_attached :preview_image
   end
 
-  # Returns an ActiveStorage::Variant instance with the set of +transformations+ provided. This is only relevant for image
-  # files, and it allows any image to be transformed for size, colors, and the like. Example:
+  # Returns an ActiveStorage::Variant or ActiveStorage::VariantWithRecord instance with the set of +transformations+ provided.
+  # This is only relevant for image files, and it allows any image to be transformed for size, colors, and the like. Example:
   #
   #   avatar.variant(resize_to_limit: [100, 100]).processed.url
   #
@@ -110,10 +110,10 @@ module ActiveStorage::Blob::Representable
     end
 
     def format
-      if filename.extension.present? && MimeMagic.by_extension(filename.extension)&.to_s == content_type
+      if filename.extension.present? && MiniMime.lookup_by_extension(filename.extension)&.content_type == content_type
         filename.extension
       else
-        MimeMagic.new(content_type).extensions.first
+        MiniMime.lookup_by_content_type(content_type)&.extension
       end
     end
 

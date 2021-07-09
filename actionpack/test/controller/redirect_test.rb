@@ -65,19 +65,23 @@ class RedirectController < ActionController::Base
   end
 
   def redirect_back_with_status
-    redirect_back(fallback_location: "/things/stuff", status: 307)
+    redirect_back_or_to "/things/stuff", status: 307
   end
 
   def redirect_back_with_status_and_fallback_location_to_another_host
-    redirect_back(fallback_location: "http://www.rubyonrails.org/", status: 307)
+    redirect_back_or_to "http://www.rubyonrails.org/", status: 307
   end
 
   def safe_redirect_back_with_status
-    redirect_back(fallback_location: "/things/stuff", status: 307, allow_other_host: false)
+    redirect_back_or_to "/things/stuff", status: 307, allow_other_host: false
   end
 
   def safe_redirect_back_with_status_and_fallback_location_to_another_host
-    redirect_back(fallback_location: "http://www.rubyonrails.org/", status: 307, allow_other_host: false)
+    redirect_back_or_to "http://www.rubyonrails.org/", status: 307, allow_other_host: false
+  end
+
+  def redirect_back_with_explicit_fallback_kwarg
+    redirect_back(fallback_location: "/things/stuff", status: 307)
   end
 
   def host_redirect
@@ -90,6 +94,16 @@ class RedirectController < ActionController::Base
 
   def redirect_to_url
     redirect_to "http://www.rubyonrails.org/"
+  end
+
+  def redirect_to_url_with_stringlike
+    stringlike = Object.new
+
+    def stringlike.to_str
+      "http://www.rubyonrails.org/"
+    end
+
+    redirect_to stringlike
   end
 
   def redirect_to_url_with_unescaped_query_string
@@ -114,6 +128,14 @@ class RedirectController < ActionController::Base
 
   def redirect_to_nil
     redirect_to nil
+  end
+
+  def redirect_to_polymorphic
+    redirect_to [:internal, Workshop.new(5)]
+  end
+
+  def redirect_to_polymorphic_string_args
+    redirect_to ["internal", Workshop.new(5)]
   end
 
   def redirect_to_params
@@ -148,7 +170,7 @@ class RedirectController < ActionController::Base
   def rescue_errors(e) raise e end
 
   private
-    def dashbord_url(id, message)
+    def dashboard_url(id, message)
       url_for action: "dashboard", params: { "id" => id, "message" => message }
     end
 end
@@ -253,6 +275,12 @@ class RedirectTest < ActionController::TestCase
     assert_redirected_to "http://www.rubyonrails.org/"
   end
 
+  def test_redirect_to_url_with_stringlike
+    get :redirect_to_url_with_stringlike
+    assert_response :redirect
+    assert_redirected_to "http://www.rubyonrails.org/"
+  end
+
   def test_redirect_to_url_with_unescaped_query_string
     get :redirect_to_url_with_unescaped_query_string
     assert_response :redirect
@@ -326,6 +354,16 @@ class RedirectTest < ActionController::TestCase
     assert_equal "http://www.rubyonrails.org/", redirect_to_url
   end
 
+  def test_redirect_back_with_explicit_fallback_kwarg
+    referer = "http://www.example.com/coming/from"
+    @request.env["HTTP_REFERER"] = referer
+
+    get :redirect_back_with_explicit_fallback_kwarg
+
+    assert_response 307
+    assert_equal referer, redirect_to_url
+  end
+
   def test_redirect_to_record
     with_routing do |set|
       set.draw do
@@ -343,6 +381,43 @@ class RedirectTest < ActionController::TestCase
       get :redirect_to_new_record
       assert_equal "http://test.host/workshops", redirect_to_url
       assert_redirected_to Workshop.new(nil)
+    end
+  end
+
+  def test_polymorphic_redirect
+    with_routing do |set|
+      set.draw do
+        namespace :internal do
+          resources :workshops
+        end
+
+        ActiveSupport::Deprecation.silence do
+          get ":controller/:action"
+        end
+      end
+
+      get :redirect_to_polymorphic
+      assert_equal "http://test.host/internal/workshops/5", redirect_to_url
+      assert_redirected_to [:internal, Workshop.new(5)]
+    end
+  end
+
+  def test_polymorphic_redirect_with_string_args
+    with_routing do |set|
+      set.draw do
+        namespace :internal do
+          resources :workshops
+        end
+
+        ActiveSupport::Deprecation.silence do
+          get ":controller/:action"
+        end
+      end
+
+      error = assert_raises(ArgumentError) do
+        get :redirect_to_polymorphic_string_args
+      end
+      assert_equal("Please use symbols for polymorphic route arguments.", error.message)
     end
   end
 

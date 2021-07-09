@@ -2,6 +2,7 @@
 
 require "active_support/core_ext/string/inflections"
 require "active_support/core_ext/array/conversions"
+require "zeitwerk"
 
 module Rails
   class Application
@@ -39,14 +40,10 @@ module Rails
         example       = autoloaded.first
         example_klass = example.constantize.class
 
-        if config.autoloader == :zeitwerk
-          ActiveSupport::DescendantsTracker.clear
-          ActiveSupport::Dependencies.clear
+        ActiveSupport::DescendantsTracker.clear
+        ActiveSupport::Dependencies.clear
 
-          unload_message = "#{these} autoloaded #{constants} #{have} been unloaded."
-        else
-          unload_message = "`config.autoloader` is set to `#{config.autoloader}`. #{these} autoloaded #{constants} would have been unloaded if `config.autoloader` had been set to `:zeitwerk`."
-        end
+        unload_message = "#{these} autoloaded #{constants} #{have} been unloaded."
 
         ActiveSupport::Deprecation.warn(<<~WARNING)
           Initialization autoloaded the #{constants} #{enum}.
@@ -76,24 +73,8 @@ module Rails
       end
 
       initializer :let_zeitwerk_take_over do
-        if config.autoloader == :zeitwerk
-          require "active_support/dependencies/zeitwerk_integration"
-          ActiveSupport::Dependencies::ZeitwerkIntegration.take_over(enable_reloading: !config.cache_classes)
-        end
-      end
-
-      initializer :add_builtin_route do |app|
-        if Rails.env.development?
-          app.routes.prepend do
-            get "/rails/info/properties" => "rails/info#properties", internal: true
-            get "/rails/info/routes"     => "rails/info#routes", internal: true
-            get "/rails/info"            => "rails/info#index", internal: true
-          end
-
-          app.routes.append do
-            get "/"                      => "rails/welcome#index", internal: true
-          end
-        end
+        require "active_support/dependencies/zeitwerk_integration"
+        ActiveSupport::Dependencies::ZeitwerkIntegration.take_over(enable_reloading: !config.cache_classes)
       end
 
       # Setup default session store if not already set in config/application.rb
@@ -127,10 +108,7 @@ module Rails
       initializer :eager_load! do
         if config.eager_load
           ActiveSupport.run_load_hooks(:before_eager_load, self)
-          # Checks defined?(Zeitwerk) instead of zeitwerk_enabled? because we
-          # want to eager load any dependency managed by Zeitwerk regardless of
-          # the autoloading mode of the application.
-          Zeitwerk::Loader.eager_load_all if defined?(Zeitwerk)
+          Zeitwerk::Loader.eager_load_all
           config.eager_load_namespaces.each(&:eager_load!)
         end
       end
@@ -183,6 +161,22 @@ module Rails
             # is required for proper operation
 
             app.executor.register_hook(InterlockHook, outer: true)
+          end
+        end
+      end
+
+      initializer :add_internal_routes do |app|
+        if Rails.env.development?
+          app.routes.prepend do
+            get "/rails/info/properties" => "rails/info#properties", internal: true
+            get "/rails/info/routes"     => "rails/info#routes",     internal: true
+            get "/rails/info"            => "rails/info#index",      internal: true
+          end
+
+          routes_reloader.run_after_load_paths = -> do
+            app.routes.append do
+              get "/" => "rails/welcome#index", internal: true
+            end
           end
         end
       end

@@ -105,6 +105,12 @@ class MiddlewareStackTest < ActiveSupport::TestCase
     end
   end
 
+  test "delete requires the middleware to be in the stack" do
+    assert_raises RuntimeError do
+      @stack.delete(BazMiddleware)
+    end
+  end
+
   test "move preserves the arguments of the moved middleware" do
     @stack.use BazMiddleware, true, foo: "bar"
     @stack.move_before(FooMiddleware, BazMiddleware)
@@ -194,5 +200,28 @@ class MiddlewareStackTest < ActiveSupport::TestCase
 
   test "includes a middleware" do
     assert_equal true, @stack.include?(ActionDispatch::MiddlewareStack::Middleware.new(BarMiddleware, nil, nil))
+  end
+
+  test "referencing Rack::Runtime is deprecated" do
+    @stack.use ActionDispatch::MiddlewareStack::FakeRuntime
+
+    assert_deprecated(/Rack::Runtime is removed/) do
+      @stack.insert_after(Rack::Runtime, BazMiddleware)
+    end
+  end
+
+  test "referencing Rack::Runtime is not deprecated if added" do
+    assert_not_deprecated do
+      @stack.use Rack::Runtime
+      @stack.insert_before(Rack::Runtime, BazMiddleware)
+    end
+  end
+
+  test "referencing FakeRuntime throws an error" do
+    @stack.use ActionDispatch::MiddlewareStack::FakeRuntime
+
+    assert_raises RuntimeError do
+      @stack.insert_after ActionDispatch::MiddlewareStack::FakeRuntime, BazMiddleware
+    end
   end
 end

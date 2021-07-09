@@ -66,9 +66,6 @@ class ActiveStorage::Preview
     end
   end
 
-  alias_method :service_url, :url
-  deprecate service_url: :url
-
   # Returns a combination key of the blob and the variation that together identifies a specific variant.
   def key
     if processed?
@@ -93,7 +90,7 @@ class ActiveStorage::Preview
 
     def process
       previewer.preview(service_name: blob.service_name) do |attachable|
-        ActiveRecord::Base.connected_to(role: ActiveRecord::Base.writing_role) do
+        ActiveRecord::Base.connected_to(role: ActiveRecord.writing_role) do
           image.attach(attachable)
         end
       end

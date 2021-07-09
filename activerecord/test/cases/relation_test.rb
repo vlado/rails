@@ -424,14 +424,6 @@ module ActiveRecord
       end
     end
 
-    def test_marshal_load_legacy_relation
-      path = File.expand_path(
-        "support/marshal_compatibility_fixtures/legacy_relation.dump",
-        TEST_ROOT
-      )
-      assert_equal 11, Marshal.load(File.read(path)).size
-    end
-
     test "no queries on empty IN" do
       assert_queries(0) do
         Post.where(id: []).load
@@ -441,6 +433,18 @@ module ActiveRecord
     test "can unscope empty IN" do
       assert_queries(1) do
         Post.where(id: []).unscope(where: :id).load
+      end
+    end
+
+    test "no queries on empty relation exists?" do
+      assert_queries(0) do
+        Post.where(id: []).exists?(123)
+      end
+    end
+
+    test "no queries on empty condition exists?" do
+      assert_queries(0) do
+        Post.all.exists?(id: [])
       end
     end
 

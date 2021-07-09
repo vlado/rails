@@ -12,9 +12,9 @@ module ActiveModel
 
           if value.acts_like?(:time)
             if is_utc?
-              value = value.getutc if value.respond_to?(:getutc) && !value.utc?
+              value = value.getutc if !value.utc?
             else
-              value = value.getlocal if value.respond_to?(:getlocal)
+              value = value.getlocal
             end
           end
 
@@ -75,7 +75,7 @@ module ActiveModel
             usec = $7.to_i
             usec_len = $7&.length
             if usec_len&.< 6
-              usec *= 10 ** (6 - usec_len)
+              usec *= 10**(6 - usec_len)
             end
 
             if $8

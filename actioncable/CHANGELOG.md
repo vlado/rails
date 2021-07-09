@@ -1,38 +1,22 @@
-*   `ActionCable::Connection::Base` now allows intercepting unhandled exceptions
-    with `rescue_from` before they are logged, which is useful for error reporting
-    tools and other integrations.
+*   Truncate broadcast logging messages.
 
-    *Justin Talbott*
+    *J Smith*
 
-*   Add `ActionCable::Channel#stream_or_reject_for` to stream if record is present, otherwise reject the connection
+*   OpenSSL constants are now used for Digest computations.
 
-    *Atul Bhosale*
+    *Dirkjan Bussink*
 
-*   Add `ActionCable::Channel#stop_stream_from` and `#stop_stream_for` to unsubscribe from a specific stream.
+*   The Action Cable client now includes safeguards to prevent a "thundering
+    herd" of client reconnects after server connectivity loss:
 
-    *Zhang Kang*
+    * The client will wait a random amount between 1x and 3x of the stale
+      threshold after the server's last ping before making the first
+      reconnection attempt.
+    * Subsequent reconnection attempts now use exponential backoff instead of
+      logarithmic backoff.  To allow the delay between reconnection attempts to
+      increase slowly at first, the default exponentiation base is < 2.
+    * Random jitter is applied to each delay between reconnection attempts.
 
-*   Add PostgreSQL subscription connection identificator.
+    *Jonathan Hefner*
 
-    Now you can distinguish Action Cable PostgreSQL subscription connections among others.
-    Also, you can set custom `id` in `cable.yml` configuration.
-
-    ```sql
-    SELECT application_name FROM pg_stat_activity;
-    /*
-        application_name
-    ------------------------
-    psql
-    ActionCable-PID-42
-    (2 rows)
-    */
-    ```
-
-    *Sergey Ponomarev*
-
-*   Subscription confirmations and rejections are now logged at the `DEBUG` level instead of `INFO`.
-
-    *DHH*
-
-
-Please check [6-0-stable](https://github.com/rails/rails/blob/6-0-stable/actioncable/CHANGELOG.md) for previous changes.
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actioncable/CHANGELOG.md) for previous changes.

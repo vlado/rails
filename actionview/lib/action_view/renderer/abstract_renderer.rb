@@ -45,11 +45,9 @@ module ActionView
             raise_invalid_option_as(as) unless /\A[a-z_]\w*\z/.match?(as.to_s)
             as.to_sym
           else
-            begin
-              base = path.end_with?("/") ? "" : File.basename(path)
-              raise_invalid_identifier(path) unless base =~ /\A_?(.*?)(?:\.\w+)*\z/
-              $1.to_sym
-            end
+            base = path.end_with?("/") ? "" : File.basename(path)
+            raise_invalid_identifier(path) unless base =~ /\A_?(.*?)(?:\.\w+)*\z/
+            $1.to_sym
           end
         end
 
@@ -160,7 +158,7 @@ module ActionView
 
       def extract_details(options) # :doc:
         details = nil
-        @lookup_context.registered_details.each do |key|
+        LookupContext.registered_details.each do |key|
           value = options[key]
 
           if value

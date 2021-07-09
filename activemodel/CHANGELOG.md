@@ -1,63 +1,36 @@
-*   Deprecate marshalling load from legacy attributes format.
+*   Fix `to_json` for `ActiveModel::Dirty` object.
 
-    *Ryuta Kamizono*
+    Exclude +mutations_from_database+ attribute from json as it lead to recursion.
 
-*   `*_previously_changed?` accepts `:from` and `:to` keyword arguments like `*_changed?`.
+    *Anil Maurya*
 
-        topic.update!(status: :archived)
-        topic.status_previously_changed?(from: "active", to: "archived")
-        # => true
+*   Add `ActiveModel::AttributeSet#values_for_database`
 
-    *George Claghorn*
+    Returns attributes with values for assignment to the database.
 
-*   Raise FrozenError when trying to write attributes that aren't backed by the database on an object that is frozen:
+    *Chris Salzberg*
 
-        class Animal
-          include ActiveModel::Attributes
-          attribute :age
-        end
+*   Fix delegation in ActiveModel::Type::Registry#lookup and ActiveModel::Type.lookup
 
-        animal = Animal.new
-        animal.freeze
-        animal.age = 25 # => FrozenError, "can't modify a frozen Animal"
+    Passing a last positional argument `{}` would be incorrectly considered as keyword argument.
 
-    *Josh Brody*
+    *Benoit Daloze*
 
-*   Add `*_previously_was` attribute methods when dirty tracking. Example:
+*   Cache and re-use generated attribute methods.
 
-        pirate.update(catchphrase: "Ahoy!")
-        pirate.previous_changes["catchphrase"] # => ["Thar She Blows!", "Ahoy!"]
-        pirate.catchphrase_previously_was # => "Thar She Blows!"
+    Generated methods with identical implementations will now share their instruction sequences
+    leading to reduced memory retention, and slightly faster load time.
 
-    *DHH*
+    *Jean Boussier*
 
-*   Encapsulate each validation error as an Error object.
+*   Add `in: range`  parameter to `numericality` validator.
 
-    The `ActiveModel`’s `errors` collection is now an array of these Error
-    objects, instead of messages/details hash.
+    *Michal Papis*
 
-    For each of these `Error` object, its `message` and `full_message` methods
-    are for generating error messages. Its `details` method would return error’s
-    extra parameters, found in the original `details` hash.
+*   Add `locale` argument to `ActiveModel::Name#initialize` to be used to generate the `singular`,
+   `plural`, `route_key` and `singular_route_key` values.
 
-    The change tries its best at maintaining backward compatibility, however
-    some edge cases won’t be covered, like `errors#first` will return `ActiveModel::Error` and manipulating
-    `errors.messages` and `errors.details` hashes directly will have no effect. Moving forward,
-    please convert those direct manipulations to use provided API methods instead.
-
-    The list of deprecated methods and their planned future behavioral changes at the next major release are:
-
-    * `errors#slice!` will be removed.
-    * `errors#each` with the `key, value` two-arguments block will stop working, while the `error` single-argument block would return `Error` object.
-    * `errors#values` will be removed.
-    * `errors#keys` will be removed.
-    * `errors#to_xml` will be removed.
-    * `errors#to_h` will be removed, and can be replaced with `errors#to_hash`.
-    * Manipulating `errors` itself as a hash will have no effect (e.g. `errors[:foo] = 'bar'`).
-    * Manipulating the hash returned by `errors#messages` (e.g. `errors.messages[:foo] = 'bar'`) will have no effect.
-    * Manipulating the hash returned by `errors#details` (e.g. `errors.details[:foo].clear`) will have no effect.
-
-    *lulalala*
+    *Lukas Pokorny*
 
 
-Please check [6-0-stable](https://github.com/rails/rails/blob/6-0-stable/activemodel/CHANGELOG.md) for previous changes.
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/activemodel/CHANGELOG.md) for previous changes.

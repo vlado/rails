@@ -23,7 +23,7 @@ module ActionDispatch
     include ActionDispatch::Http::FilterParameters
     include ActionDispatch::Http::URL
     include ActionDispatch::ContentSecurityPolicy::Request
-    include ActionDispatch::FeaturePolicy::Request
+    include ActionDispatch::PermissionsPolicy::Request
     include Rack::Request::Env
 
     autoload :Session, "action_dispatch/request/session"
@@ -42,11 +42,8 @@ module ActionDispatch
         HTTP_NEGOTIATE HTTP_PRAGMA HTTP_CLIENT_IP
         HTTP_X_FORWARDED_FOR HTTP_ORIGIN HTTP_VERSION
         HTTP_X_CSRF_TOKEN HTTP_X_REQUEST_ID HTTP_X_FORWARDED_HOST
-        SERVER_ADDR
         ].freeze
 
-    # TODO: Remove SERVER_ADDR when we remove support to Rack 2.1.
-    # See https://github.com/rack/rack/commit/c173b188d81ee437b588c1e046a1c9f031dea550
     ENV_METHODS.each do |env|
       class_eval <<-METHOD, __FILE__, __LINE__ + 1
         # frozen_string_literal: true
@@ -76,7 +73,7 @@ module ActionDispatch
     PASS_NOT_FOUND = Class.new { # :nodoc:
       def self.action(_); self; end
       def self.call(_); [404, { "X-Cascade" => "pass" }, []]; end
-      def self.binary_params_for?(action); false; end
+      def self.action_encoding_template(action); false; end
     }
 
     def controller_class
@@ -136,6 +133,8 @@ module ActionDispatch
     HTTP_METHODS.each { |method|
       HTTP_METHOD_LOOKUP[method] = method.underscore.to_sym
     }
+
+    alias raw_request_method request_method # :nodoc:
 
     # Returns the HTTP \method that the application should see.
     # In the case where the \method was overridden by a middleware
@@ -264,7 +263,7 @@ module ActionDispatch
     #    # get "/articles"
     #    request.media_type # => "application/x-www-form-urlencoded"
     def media_type
-      content_mime_type.to_s
+      content_mime_type&.to_s
     end
 
     # Returns the content length of the request as an integer.
@@ -357,14 +356,8 @@ module ActionDispatch
       get_header("rack.input")
     end
 
-    # TODO This should be broken apart into AD::Request::Session and probably
-    # be included by the session middleware.
     def reset_session
-      if session && session.respond_to?(:destroy)
-        session.destroy
-      else
-        self.session = {}
-      end
+      session.destroy
     end
 
     def session=(session) #:nodoc:
@@ -432,10 +425,6 @@ module ActionDispatch
     def commit_flash
     end
 
-    def ssl?
-      super || scheme == "wss"
-    end
-
     def inspect # :nodoc:
       "#<#{self.class.name} #{method} #{original_url.dump} for #{remote_ip}>"
     end
@@ -444,6 +433,10 @@ module ActionDispatch
       def check_method(name)
         HTTP_METHOD_LOOKUP[name] || raise(ActionController::UnknownHttpMethod, "#{name}, accepted HTTP methods are #{HTTP_METHODS[0...-1].join(', ')}, and #{HTTP_METHODS[-1]}")
         name
+      end
+
+      def default_session
+        Session.disabled(self)
       end
   end
 end

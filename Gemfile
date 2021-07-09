@@ -10,7 +10,7 @@ gemspec
 gem "rake", ">= 11.1"
 
 gem "capybara", ">= 3.26"
-gem "selenium-webdriver", ">= 3.141.592"
+gem "selenium-webdriver", ">= 4.0.0.alpha7"
 
 gem "rack-cache", "~> 1.2"
 gem "sass-rails"
@@ -23,7 +23,7 @@ gem "bcrypt", "~> 3.1.11", require: false
 
 # This needs to be with require false to avoid it being automatically loaded by
 # sprockets.
-gem "uglifier", ">= 1.3.0", require: false
+gem "terser", ">= 1.1.4", require: false
 
 # Explicitly avoid 1.x that doesn't support Ruby 2.4+
 gem "json", ">= 2.0.0"
@@ -36,7 +36,7 @@ group :rubocop do
 end
 
 group :doc do
-  gem "sdoc", "~> 1.1"
+  gem "sdoc", ">= 2.2.0"
   gem "redcarpet", "~> 3.2.3", platforms: :ruby
   gem "w3c_validators", "~> 1.3.6"
   gem "kindlerb", "~> 1.2.0"
@@ -45,13 +45,14 @@ end
 
 # Active Support
 gem "dalli"
-gem "listen", "~> 3.2", require: false, github: "guard/listen"
+gem "listen", "~> 3.3", require: false
 gem "libxml-ruby", platforms: :ruby
 gem "connection_pool", require: false
 gem "rexml", require: false
 
-# for railties app_generator_test
+# for railties
 gem "bootsnap", ">= 1.4.4", require: false
+gem "webrick", require: false
 
 # Active Job
 group :job do
@@ -75,13 +76,9 @@ group :cable do
   gem "hiredis", require: false
   gem "redis", "~> 4.0", require: false
 
-  gem "redis-namespace", github: "resque/redis-namespace"
+  gem "redis-namespace"
 
   gem "websocket-client-simple", github: "matthewd/websocket-client-simple", branch: "close-race", require: false
-
-  gem "blade", require: false, platforms: [:ruby]
-  gem "blade-sauce_labs_plugin", require: false, platforms: [:ruby]
-  gem "sprockets-export", require: false
 end
 
 # Active Storage
@@ -98,8 +95,13 @@ gem "aws-sdk-sns", require: false
 gem "webmock"
 
 group :ujs do
-  gem "qunit-selenium"
   gem "webdrivers"
+end
+
+# Action View
+group :view do
+  gem "blade", require: false, platforms: [:ruby]
+  gem "sprockets-export", require: false
 end
 
 # Add your own local bundler stuff.
@@ -120,7 +122,7 @@ group :test do
 end
 
 platforms :ruby, :mswin, :mswin64, :mingw, :x64_mingw do
-  gem "nokogiri", ">= 1.8.1"
+  gem "nokogiri", ">= 1.8.1", "!= 1.11.0"
 
   # Needed for compiling the ActionDispatch::Journey parser.
   gem "racc", ">=1.4.6", require: false
@@ -166,3 +168,15 @@ end
 
 gem "tzinfo-data", platforms: [:mingw, :mswin, :x64_mingw, :jruby]
 gem "wdm", ">= 0.1.0", platforms: [:mingw, :mswin, :x64_mingw, :mswin64]
+
+if RUBY_VERSION >= "3.1"
+  # net-smtp, net-imap and net-pop were removed from default gems in Ruby 3.1, but is used by the `mail` gem.
+  # So we need to add them as dependencies until `mail` is fixed: https://github.com/mikel/mail/pull/1439
+  gem "net-smtp", require: false
+  gem "net-imap", require: false
+  gem "net-pop", require: false
+
+  # matrix was removed from default gems in Ruby 3.1, but is used by the `capybara` gem.
+  # So we need to add it as a dependency until `capybara` is fixed: https://github.com/teamcapybara/capybara/pull/2468
+  gem "matrix", require: false
+end

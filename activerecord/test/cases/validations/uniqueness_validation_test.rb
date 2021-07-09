@@ -195,16 +195,18 @@ class UniquenessValidationTest < ActiveRecord::TestCase
   end
 
   def test_validate_uniqueness_with_polymorphic_object_scope
-    Essay.validates_uniqueness_of(:name, scope: :writer)
+    repair_validations(Essay) do
+      Essay.validates_uniqueness_of(:name, scope: :writer)
 
-    a = Author.create(name: "Sergey")
-    p = Person.create(first_name: "Sergey")
+      a = Author.create(name: "Sergey")
+      p = Person.create(first_name: "Sergey")
 
-    e1 = a.essays.create(name: "Essay")
-    assert e1.valid?, "Saving e1"
+      e1 = a.essays.create(name: "Essay")
+      assert e1.valid?, "Saving e1"
 
-    e2 = p.essays.create(name: "Essay")
-    assert e2.valid?, "Saving e2"
+      e2 = p.essays.create(name: "Essay")
+      assert e2.valid?, "Saving e2"
+    end
   end
 
   def test_validate_uniqueness_with_composed_attribute_scope
@@ -333,28 +335,7 @@ class UniquenessValidationTest < ActiveRecord::TestCase
     assert t3.save, "Should save t3 as unique"
   end
 
-  if current_adapter?(:Mysql2Adapter)
-    def test_deprecate_validate_uniqueness_mismatched_collation
-      Topic.validates_uniqueness_of(:author_email_address)
-
-      topic1 = Topic.new(author_email_address: "david@loudthinking.com")
-      topic2 = Topic.new(author_email_address: "David@loudthinking.com")
-
-      assert_equal 1, Topic.where(author_email_address: "david@loudthinking.com").count
-
-      assert_deprecated do
-        assert_not topic1.valid?
-        assert_not topic1.save
-        assert topic2.valid?
-        assert topic2.save
-      end
-
-      assert_equal 2, Topic.where(author_email_address: "david@loudthinking.com").count
-      assert_equal 2, Topic.where(author_email_address: "David@loudthinking.com").count
-    end
-  end
-
-  def test_validate_case_sensitive_uniqueness_by_default
+  def test_validate_uniqueness_by_default_database_collation
     Topic.validates_uniqueness_of(:author_email_address)
 
     topic1 = Topic.new(author_email_address: "david@loudthinking.com")
@@ -362,20 +343,21 @@ class UniquenessValidationTest < ActiveRecord::TestCase
 
     assert_equal 1, Topic.where(author_email_address: "david@loudthinking.com").count
 
-    ActiveSupport::Deprecation.silence do
-      assert_not topic1.valid?
-      assert_not topic1.save
+    assert_not topic1.valid?
+    assert_not topic1.save
+
+    if current_adapter?(:Mysql2Adapter)
+      # Case insensitive collation (utf8mb4_0900_ai_ci) by default.
+      # Should not allow "David" if "david" exists.
+      assert_not topic2.valid?
+      assert_not topic2.save
+    else
       assert topic2.valid?
       assert topic2.save
     end
 
-    if current_adapter?(:Mysql2Adapter)
-      assert_equal 2, Topic.where(author_email_address: "david@loudthinking.com").count
-      assert_equal 2, Topic.where(author_email_address: "David@loudthinking.com").count
-    else
-      assert_equal 1, Topic.where(author_email_address: "david@loudthinking.com").count
-      assert_equal 1, Topic.where(author_email_address: "David@loudthinking.com").count
-    end
+    assert_equal 1, Topic.where(author_email_address: "david@loudthinking.com").count
+    assert_equal 1, Topic.where(author_email_address: "David@loudthinking.com").count
   end
 
   def test_validate_case_sensitive_uniqueness

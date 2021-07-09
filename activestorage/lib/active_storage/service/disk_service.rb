@@ -2,14 +2,14 @@
 
 require "fileutils"
 require "pathname"
-require "digest/md5"
+require "openssl"
 require "active_support/core_ext/numeric/bytes"
 
 module ActiveStorage
   # Wraps a local disk path as an Active Storage service. See ActiveStorage::Service for the generic API
   # documentation that applies to all services.
   class Service::DiskService < Service
-    attr_reader :root
+    attr_accessor :root
 
     def initialize(root:, public: false, **options)
       @root = root
@@ -124,6 +124,10 @@ module ActiveStorage
           purpose: :blob_key
         )
 
+        if current_host.blank?
+          raise ArgumentError, "Cannot generate URL for #{filename} using Disk service, please set ActiveStorage::Current.host."
+        end
+
         current_uri = URI.parse(current_host)
 
         url_helpers.rails_disk_service_url(verified_key_with_expiration,
@@ -154,7 +158,7 @@ module ActiveStorage
       end
 
       def ensure_integrity_of(key, checksum)
-        unless Digest::MD5.file(path_for(key)).base64digest == checksum
+        unless OpenSSL::Digest::MD5.file(path_for(key)).base64digest == checksum
           delete key
           raise ActiveStorage::IntegrityError
         end

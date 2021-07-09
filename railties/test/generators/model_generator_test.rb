@@ -115,6 +115,16 @@ class ModelGeneratorTest < Rails::Generators::TestCase
     assert_no_match("[WARNING] Rails cannot recover singular form from its plural form", regular_content)
   end
 
+  def test_impossible_inflection_rules_raises_an_error
+    content = capture(:stderr) { run_generator ["BFF"] }
+    message = <<~MESSAGE
+      Rails cannot recover the underscored form from its camelcase form 'BFF'.
+      Please use an underscored name instead, either 'bff' or 'bf_f'.
+      Or setup custom inflection rules for this noun before running the generator in config/initializers/inflections.rb.
+    MESSAGE
+    assert_match message, content
+  end
+
   def test_model_with_underscored_parent_option
     run_generator ["account", "--parent", "admin/account"]
     assert_file "app/models/account.rb", /class Account < Admin::Account/
@@ -124,7 +134,7 @@ class ModelGeneratorTest < Rails::Generators::TestCase
     run_generator ["admin/account"]
     assert_file "app/models/admin.rb", /module Admin/
     assert_file "app/models/admin.rb", /def self\.table_name_prefix/
-    assert_file "app/models/admin.rb", /'admin_'/
+    assert_file "app/models/admin.rb", /"admin_"/
     assert_file "app/models/admin/account.rb", /class Admin::Account < ApplicationRecord/
   end
 
@@ -213,23 +223,6 @@ class ModelGeneratorTest < Rails::Generators::TestCase
     end
   end
 
-  def test_migration_with_attributes_and_with_wrong_index_declaration
-    run_generator ["product", "name:string", "supplier_id:integer:inex", "user_id:integer:unqu"]
-
-    assert_migration "db/migrate/create_products.rb" do |m|
-      assert_method :change, m do |up|
-        assert_match(/create_table :products/, up)
-        assert_match(/t\.string :name/, up)
-        assert_match(/t\.integer :supplier_id/, up)
-        assert_match(/t\.integer :user_id/, up)
-
-        assert_no_match(/add_index :products, :name/, up)
-        assert_no_match(/add_index :products, :supplier_id/, up)
-        assert_no_match(/add_index :products, :user_id/, up)
-      end
-    end
-  end
-
   def test_migration_with_missing_attribute_type_and_with_index
     run_generator ["product", "name:index", "supplier_id:integer:index", "year:integer"]
 
@@ -264,14 +257,14 @@ class ModelGeneratorTest < Rails::Generators::TestCase
   end
 
   def test_migration_without_timestamps
-    ActiveRecord::Base.timestamped_migrations = false
+    ActiveRecord.timestamped_migrations = false
     run_generator ["account"]
     assert_file "db/migrate/001_create_accounts.rb", /class CreateAccounts < ActiveRecord::Migration\[[0-9.]+\]/
 
     run_generator ["project"]
     assert_file "db/migrate/002_create_projects.rb", /class CreateProjects < ActiveRecord::Migration\[[0-9.]+\]/
   ensure
-    ActiveRecord::Base.timestamped_migrations = true
+    ActiveRecord.timestamped_migrations = true
   end
 
   def test_migration_with_configured_path
@@ -478,18 +471,6 @@ class ModelGeneratorTest < Rails::Generators::TestCase
       end
     FILE
     assert_file "app/models/account.rb", expected_file
-  end
-
-  def test_passing_required_to_model_generator_is_deprecated
-    assert_deprecated do
-      run_generator ["account", "supplier:references{required}"]
-    end
-
-    assert_migration "db/migrate/create_accounts.rb" do |m|
-      assert_method :change, m do |up|
-        assert_match(/t\.references :supplier,.*\snull: false/, up)
-      end
-    end
   end
 
   def test_null_false_is_added_for_references_by_default

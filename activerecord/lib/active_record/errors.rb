@@ -100,7 +100,7 @@ module ActiveRecord
   end
 
   # Raised by {ActiveRecord::Base#destroy!}[rdoc-ref:Persistence#destroy!]
-  # when a call to {#destroy}[rdoc-ref:Persistence#destroy!]
+  # when a call to {#destroy}[rdoc-ref:Persistence#destroy]
   # would return false.
   #
   #   begin
@@ -115,6 +115,16 @@ module ActiveRecord
     def initialize(message = nil, record = nil)
       @record = record
       super(message)
+    end
+  end
+
+  # Raised when Active Record finds multiple records but only expected one.
+  class SoleRecordExceeded < ActiveRecordError
+    attr_reader :record
+
+    def initialize(record = nil)
+      @record = record
+      super "Wanted only one #{record&.name || "record"}"
     end
   end
 
@@ -359,8 +369,13 @@ module ActiveRecord
   # See the following:
   #
   # * https://www.postgresql.org/docs/current/static/transaction-iso.html
-  # * https://dev.mysql.com/doc/refman/en/server-error-reference.html#error_er_lock_deadlock
+  # * https://dev.mysql.com/doc/mysql-errors/en/server-error-reference.html#error_er_lock_deadlock
   class TransactionRollbackError < StatementInvalid
+  end
+
+  # AsynchronousQueryInsideTransactionError will be raised when attempting
+  # to perform an asynchronous query from inside a transaction
+  class AsynchronousQueryInsideTransactionError < ActiveRecordError
   end
 
   # SerializationFailure will be raised when a transaction is rolled
@@ -399,17 +414,15 @@ module ActiveRecord
   end
 
   # UnknownAttributeReference is raised when an unknown and potentially unsafe
-  # value is passed to a query method when allow_unsafe_raw_sql is set to
-  # :disabled. For example, passing a non column name value to a relation's
-  # #order method might cause this exception.
+  # value is passed to a query method. For example, passing a non column name
+  # value to a relation's #order method might cause this exception.
   #
   # When working around this exception, caution should be taken to avoid SQL
   # injection vulnerabilities when passing user-provided values to query
   # methods. Known-safe values can be passed to query methods by wrapping them
   # in Arel.sql.
   #
-  # For example, with allow_unsafe_raw_sql set to :disabled, the following
-  # code would raise this exception:
+  # For example, the following code would raise this exception:
   #
   #   Post.order("length(title)").first
   #

@@ -2,10 +2,10 @@
 
 require "cgi"
 require "erb"
-require "action_view/helpers/form_helper"
 require "active_support/core_ext/string/output_safety"
 require "active_support/core_ext/array/extract_options"
 require "active_support/core_ext/array/wrap"
+require "action_view/helpers/text_helper"
 
 module ActionView
   # = Action View Form Option Helpers
@@ -793,24 +793,16 @@ module ActionView
 
         def extract_values_from_collection(collection, value_method, selected)
           if selected.is_a?(Proc)
-            collection.map do |element|
-              public_or_deprecated_send(element, value_method) if selected.call(element)
-            end.compact
+            collection.filter_map do |element|
+              element.public_send(value_method) if selected.call(element)
+            end
           else
             selected
           end
         end
 
         def value_for_collection(item, value)
-          value.respond_to?(:call) ? value.call(item) : public_or_deprecated_send(item, value)
-        end
-
-        def public_or_deprecated_send(item, value)
-          item.public_send(value)
-        rescue NoMethodError
-          raise unless item.respond_to?(value, true) && !item.respond_to?(value)
-          ActiveSupport::Deprecation.warn "Using private methods from view helpers is deprecated (calling private #{item.class}##{value})"
-          item.send(value)
+          value.respond_to?(:call) ? value.call(item) : item.public_send(value)
         end
 
         def prompt_text(prompt)

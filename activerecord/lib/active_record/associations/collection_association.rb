@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "active_support/core_ext/enumerable"
+
 module ActiveRecord
   module Associations
     # = Active Record Association Collection
@@ -28,6 +30,8 @@ module ActiveRecord
     class CollectionAssociation < Association #:nodoc:
       # Implements the reader method, e.g. foo.items for Foo.has_many :items
       def reader
+        ensure_klass_exists!
+
         if stale_target?
           reload
         end
@@ -75,6 +79,7 @@ module ActiveRecord
       def reset
         super
         @target = []
+        @replaced_or_added_targets = Set.new
         @association_ids = nil
       end
 
@@ -105,7 +110,7 @@ module ActiveRecord
         if attributes.is_a?(Array)
           attributes.collect { |attr| build(attr, &block) }
         else
-          add_to_target(build_record(attributes, &block))
+          add_to_target(build_record(attributes, &block), replace: true)
         end
       end
 
@@ -118,21 +123,6 @@ module ActiveRecord
           concat_records(records)
         else
           transaction { concat_records(records) }
-        end
-      end
-
-      # Starts a transaction in the association class's database connection.
-      #
-      #   class Author < ActiveRecord::Base
-      #     has_many :books
-      #   end
-      #
-      #   Author.first.books.transaction do
-      #     # same effect as calling Book.transaction
-      #   end
-      def transaction(*args)
-        reflection.klass.transaction(*args) do
-          yield
         end
       end
 
@@ -228,7 +218,7 @@ module ActiveRecord
       # If the collection has been loaded
       # it is equivalent to <tt>collection.size.zero?</tt>. If the
       # collection has not been loaded, it is equivalent to
-      # <tt>collection.exists?</tt>. If the collection has not already been
+      # <tt>!collection.exists?</tt>. If the collection has not already been
       # loaded and you are going to fetch the records anyway it is better to
       # check <tt>collection.length.zero?</tt>.
       def empty?
@@ -279,20 +269,19 @@ module ActiveRecord
       end
 
       def add_to_target(record, skip_callbacks: false, replace: false, &block)
-        if replace || association_scope.distinct_value
-          index = @target.index(record)
-        end
-        replace_on_target(record, index, skip_callbacks, &block)
+        replace_on_target(record, skip_callbacks, replace: replace || association_scope.distinct_value, &block)
       end
 
       def target=(record)
-        return super unless ActiveRecord::Base.has_many_inversing
+        return super unless reflection.klass.has_many_inversing
 
         case record
+        when nil
+          # It's not possible to remove the record from the inverse association.
         when Array
           super
         else
-          add_to_target(record, skip_callbacks: true, replace: true)
+          replace_on_target(record, true, replace: true, inversing: true)
         end
       end
 
@@ -315,6 +304,10 @@ module ActiveRecord
       end
 
       private
+        def transaction(&block)
+          reflection.klass.transaction(&block)
+        end
+
         # We have some records loaded from the database (persisted) and some that are
         # in-memory (memory). The same record may be represented in the persisted array
         # and in the memory array.
@@ -347,7 +340,7 @@ module ActiveRecord
 
         def _create_record(attributes, raise = false, &block)
           unless owner.persisted?
-            raise ActiveRecord::RecordNotSaved, "You cannot call create unless the parent is saved"
+            raise ActiveRecord::RecordNotSaved.new("You cannot call create unless the parent is saved", owner)
           end
 
           if attributes.is_a?(Array)
@@ -425,7 +418,7 @@ module ActiveRecord
           common_records = intersection(new_target, original_target)
           common_records.each do |record|
             skip_callbacks = true
-            replace_on_target(record, @target.index(record), skip_callbacks)
+            replace_on_target(record, skip_callbacks, replace: true)
           end
         end
 
@@ -448,7 +441,11 @@ module ActiveRecord
           records
         end
 
-        def replace_on_target(record, index, skip_callbacks)
+        def replace_on_target(record, skip_callbacks, replace:, inversing: false)
+          if replace && (!record.new_record? || @replaced_or_added_targets.include?(record))
+            index = @target.index(record)
+          end
+
           catch(:abort) do
             callback(:before_add, record)
           end || return unless skip_callbacks
@@ -458,6 +455,8 @@ module ActiveRecord
           @_was_loaded = true
 
           yield(record) if block_given?
+
+          @replaced_or_added_targets << record if inversing || index || record.new_record?
 
           if index
             target[index] = record

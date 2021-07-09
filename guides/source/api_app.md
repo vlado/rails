@@ -204,7 +204,6 @@ An API application comes with the following middleware by default:
 - `ActionDispatch::Static`
 - `ActionDispatch::Executor`
 - `ActiveSupport::Cache::Strategy::LocalCache::Middleware`
-- `Rack::Runtime`
 - `ActionDispatch::RequestId`
 - `ActionDispatch::RemoteIp`
 - `Rails::Rack::Logger`
@@ -344,7 +343,7 @@ The following middlewares, used for session management, are excluded from API ap
 The trick to adding these back in is that, by default, they are passed `session_options`
 when added (including the session key), so you can't just add a `session_store.rb` initializer, add
 `use ActionDispatch::Session::CookieStore` and have sessions functioning as usual.  (To be clear: sessions
-may work, but your session options will be ignored - i.e the session key will default to `_session_id`)
+may work, but your session options will be ignored - i.e. the session key will default to `_session_id`)
 
 Instead of the initializer, you'll have to set the relevant options somewhere before your middleware is
 built (like `config/application.rb`) and pass them to your preferred middleware, like this:
@@ -414,9 +413,8 @@ more information regarding this).
 Other plugins may add additional modules. You can get a list of all modules
 included into `ActionController::API` in the rails console:
 
-```bash
-$ bin/rails c
->> ActionController::API.ancestors - ActionController::Metal.ancestors
+```irb
+irb> ActionController::API.ancestors - ActionController::Metal.ancestors
 => [ActionController::API,
     ActiveRecord::Railties::ControllerRuntime,
     ActionDispatch::Routing::RouteSet::MountedHelpers,

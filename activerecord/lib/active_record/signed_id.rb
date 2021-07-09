@@ -10,7 +10,7 @@ module ActiveRecord
       # :singleton-method:
       # Set the secret used for the signed id verifier instance when using Active Record outside of Rails.
       # Within Rails, this is automatically set using the Rails application key generator.
-      mattr_accessor :signed_id_verifier_secret, instance_writer: false
+      class_attribute :signed_id_verifier_secret, instance_writer: false
     end
 
     module ClassMethods
@@ -20,7 +20,7 @@ module ActiveRecord
       # a certain time period.
       #
       # You set the time period that the signed id is valid for during generation, using the instance method
-      # +signed_id(expires_in: 15.minutes)+. If the time has elapsed before a signed find is attempted,
+      # <tt>signed_id(expires_in: 15.minutes)</tt>. If the time has elapsed before a signed find is attempted,
       # the signed id will no longer be valid, and nil is returned.
       #
       # It's possible to further restrict the use of a signed id with a purpose. This helps when you have a

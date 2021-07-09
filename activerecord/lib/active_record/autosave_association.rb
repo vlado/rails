@@ -150,25 +150,10 @@ module ActiveRecord
 
     included do
       Associations::Builder::Association.extensions << AssociationBuilderExtension
-      mattr_accessor :index_nested_attribute_errors, instance_writer: false, default: false
     end
 
     module ClassMethods # :nodoc:
       private
-        if Module.method(:method_defined?).arity == 1 # MRI 2.5 and older
-          using Module.new {
-            refine Module do
-              def method_defined?(method, inherit = true)
-                if inherit
-                  super(method)
-                else
-                  instance_methods(false).include?(method.to_sym)
-                end
-              end
-            end
-          }
-        end
-
         def define_non_cyclic_method(name, &block)
           return if method_defined?(name, false)
 
@@ -210,7 +195,7 @@ module ActiveRecord
             after_create save_method
             after_update save_method
           elsif reflection.has_one?
-            define_method(save_method) { save_has_one_association(reflection) } unless method_defined?(save_method)
+            define_non_cyclic_method(save_method) { save_has_one_association(reflection) }
             # Configures two callbacks instead of a single after_save so that
             # the model may rely on their execution order relative to its
             # own callbacks.
@@ -349,7 +334,7 @@ module ActiveRecord
 
         unless valid = record.valid?(context)
           if reflection.options[:autosave]
-            indexed_attribute = !index.nil? && (reflection.options[:index_errors] || ActiveRecord::Base.index_nested_attribute_errors)
+            indexed_attribute = !index.nil? && (reflection.options[:index_errors] || ActiveRecord.index_nested_attribute_errors)
 
             record.errors.group_by_attribute.each { |attribute, errors|
               attribute = normalize_reflection_attribute(indexed_attribute, reflection, index, attribute)
@@ -459,11 +444,11 @@ module ActiveRecord
           elsif autosave != false
             key = reflection.options[:primary_key] ? public_send(reflection.options[:primary_key]) : id
 
-            if (autosave && record.changed_for_autosave?) || new_record? || record_changed?(reflection, record, key)
+            if (autosave && record.changed_for_autosave?) || record_changed?(reflection, record, key)
               unless reflection.through_reflection
                 record[reflection.foreign_key] = key
                 if inverse_reflection = reflection.inverse_of
-                  record.association(inverse_reflection.name).loaded!
+                  record.association(inverse_reflection.name).inversed_from(self)
                 end
               end
 

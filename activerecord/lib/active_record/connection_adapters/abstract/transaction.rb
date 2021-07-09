@@ -33,6 +33,10 @@ module ActiveRecord
         @state == :fully_rolledback
       end
 
+      def invalidated?
+        @state == :invalidated
+      end
+
       def fully_completed?
         completed?
       end
@@ -49,6 +53,11 @@ module ActiveRecord
       def full_rollback!
         @children&.each { |c| c.rollback! }
         @state = :fully_rolledback
+      end
+
+      def invalidate!
+        @children&.each { |c| c.invalidate! }
+        @state = :invalidated
       end
 
       def commit!
@@ -299,7 +308,7 @@ module ActiveRecord
       def rollback_transaction(transaction = nil)
         @connection.lock.synchronize do
           transaction ||= @stack.pop
-          transaction.rollback
+          transaction.rollback unless transaction.state.invalidated?
           transaction.rollback_records
         end
       end
@@ -312,30 +321,38 @@ module ActiveRecord
           ret
         rescue Exception => error
           if transaction
+            transaction.state.invalidate! if error.is_a? ActiveRecord::TransactionRollbackError
             rollback_transaction
             after_failure_actions(transaction, error)
           end
+
           raise
         ensure
-          if !error && transaction
-            if Thread.current.status == "aborting"
-              rollback_transaction
+          if transaction
+            if error
+              # @connection still holds an open or invalid transaction, so we must not
+              # put it back in the pool for reuse.
+              @connection.throw_away! unless transaction.state.rolledback?
             else
-              if !completed && transaction.written
-                ActiveSupport::Deprecation.warn(<<~EOW)
-                  Using `return`, `break` or `throw` to exit a transaction block is
-                  deprecated without replacement. If the `throw` came from
-                  `Timeout.timeout(duration)`, pass an exception class as a second
-                  argument so it doesn't use `throw` to abort its block. This results
-                  in the transaction being committed, but in the next release of Rails
-                  it will rollback.
-                EOW
-              end
-              begin
-                commit_transaction
-              rescue Exception
-                rollback_transaction(transaction) unless transaction.state.completed?
-                raise
+              if Thread.current.status == "aborting"
+                rollback_transaction
+              else
+                if !completed && transaction.written
+                  ActiveSupport::Deprecation.warn(<<~EOW)
+                    Using `return`, `break` or `throw` to exit a transaction block is
+                    deprecated without replacement. If the `throw` came from
+                    `Timeout.timeout(duration)`, pass an exception class as a second
+                    argument so it doesn't use `throw` to abort its block. This results
+                    in the transaction being committed, but in the next release of Rails
+                    it will rollback.
+                  EOW
+                end
+                begin
+                  commit_transaction
+                rescue Exception
+                  rollback_transaction(transaction) unless transaction.state.completed?
+                  raise
+                end
               end
             end
           end

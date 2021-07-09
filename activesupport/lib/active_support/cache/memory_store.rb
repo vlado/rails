@@ -16,27 +16,39 @@ module ActiveSupport
     # a cleanup will occur which tries to prune the cache down to three quarters
     # of the maximum size by removing the least recently used entries.
     #
+    # Unlike other Cache store implementations, MemoryStore does not compress
+    # values by default. MemoryStore does not benefit from compression as much
+    # as other Store implementations, as it does not send data over a network.
+    # However, when compression is enabled, it still pays the full cost of
+    # compression in terms of cpu use.
+    #
     # MemoryStore is thread-safe.
     class MemoryStore < Store
       module DupCoder # :nodoc:
-        class << self
-          def load(entry)
-            entry = entry.dup
-            entry.dup_value!
-            entry
-          end
+        extend self
 
-          def dump(entry)
-            entry.dup_value!
-            entry
-          end
+        def dump(entry)
+          entry.dup_value! unless entry.compressed?
+          entry
+        end
+
+        def dump_compressed(entry, threshold)
+          entry = entry.compressed(threshold)
+          entry.dup_value! unless entry.compressed?
+          entry
+        end
+
+        def load(entry)
+          entry = entry.dup
+          entry.dup_value!
+          entry
         end
       end
 
-      DEFAULT_CODER = DupCoder
-
       def initialize(options = nil)
         options ||= {}
+        # Disable compression by default.
+        options[:compress] ||= false
         super(options)
         @data = {}
         @max_size = options[:size] || 32.megabytes
@@ -131,6 +143,10 @@ module ActiveSupport
       private
         PER_ENTRY_OVERHEAD = 240
 
+        def default_coder
+          DupCoder
+        end
+
         def cached_size(key, payload)
           key.to_s.bytesize + payload.bytesize + PER_ENTRY_OVERHEAD
         end
@@ -148,7 +164,7 @@ module ActiveSupport
         end
 
         def write_entry(key, entry, **options)
-          payload = serialize_entry(entry)
+          payload = serialize_entry(entry, **options)
           synchronize do
             return false if options[:unless_exist] && @data.key?(key)
 

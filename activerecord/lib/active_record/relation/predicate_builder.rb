@@ -9,10 +9,6 @@ module ActiveRecord
     require "active_record/relation/predicate_builder/association_query_value"
     require "active_record/relation/predicate_builder/polymorphic_array_value"
 
-    # No-op BaseHandler to work Mashal.load(File.read("legacy_relation.dump")).
-    # TODO: Remove the constant alias once Rails 6.1 has released.
-    BaseHandler = BasicObjectHandler
-
     def initialize(table)
       @table = table
       @handlers = []
@@ -32,9 +28,9 @@ module ActiveRecord
     def self.references(attributes)
       attributes.each_with_object([]) do |(key, value), result|
         if value.is_a?(Hash)
-          result << key
+          result << Arel.sql(key)
         elsif key.include?(".")
-          result << key.split(".").first
+          result << Arel.sql(key.split(".").first)
         end
       end
     end
@@ -59,7 +55,7 @@ module ActiveRecord
     end
 
     def build(attribute, value, operator = nil)
-      value = value.id if value.is_a?(Base)
+      value = value.id if value.respond_to?(:id)
       if operator ||= table.type(attribute.name).force_equality?(value) && :eq
         bind = build_bind_attribute(attribute.name, value)
         attribute.public_send(operator, bind)
@@ -69,8 +65,7 @@ module ActiveRecord
     end
 
     def build_bind_attribute(column_name, value)
-      attr = Relation::QueryAttribute.new(column_name, value, table.type(column_name))
-      Arel::Nodes::BindParam.new(attr)
+      Relation::QueryAttribute.new(column_name, value, table.type(column_name))
     end
 
     def resolve_arel_attribute(table_name, column_name, &block)
@@ -93,20 +88,19 @@ module ActiveRecord
             # PriceEstimate.where(estimate_of: treasure)
             associated_table = table.associated_table(key)
             if associated_table.polymorphic_association?
-              case value.is_a?(Array) ? value.first : value
-              when Base, Relation
-                value = [value] unless value.is_a?(Array)
-                klass = PolymorphicArrayValue
-              end
+              value = [value] unless value.is_a?(Array)
+              klass = PolymorphicArrayValue
             elsif associated_table.through_association?
               next associated_table.predicate_builder.expand_from_hash(
-                associated_table.join_foreign_key => value
+                associated_table.primary_key => value
               )
             end
 
             klass ||= AssociationQueryValue
             queries = klass.new(associated_table, value).queries.map! do |query|
-              expand_from_hash(query)
+              # If the query produced is identical to attributes don't go any deeper.
+              # Prevents stack level too deep errors when association and foreign_key are identical.
+              query == attributes ? self[key, value] : expand_from_hash(query)
             end
 
             grouping_queries(queries)

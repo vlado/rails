@@ -29,7 +29,7 @@ module ActionController
     autoload :DefaultHeaders
     autoload :EtagWithTemplateDigest
     autoload :EtagWithFlash
-    autoload :FeaturePolicy
+    autoload :PermissionsPolicy
     autoload :Flash
     autoload :Head
     autoload :Helpers
@@ -65,5 +65,4 @@ require "active_support/core_ext/module/attribute_accessors"
 require "active_support/core_ext/load_error"
 require "active_support/core_ext/module/attr_internal"
 require "active_support/core_ext/name_error"
-require "active_support/core_ext/uri"
 require "active_support/inflector"

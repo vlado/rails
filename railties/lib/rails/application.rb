@@ -6,7 +6,6 @@ require "active_support/core_ext/object/blank"
 require "active_support/key_generator"
 require "active_support/message_verifier"
 require "active_support/encrypted_configuration"
-require "active_support/deprecation"
 require "active_support/hash_with_indifferent_access"
 require "active_support/configuration_file"
 require "rails/engine"
@@ -244,14 +243,23 @@ module Rails
 
       if yaml.exist?
         require "erb"
-        all_configs    = ActiveSupport::ConfigurationFile.parse(yaml, symbolize_names: true)
+        all_configs    = ActiveSupport::ConfigurationFile.parse(yaml).deep_symbolize_keys
         config, shared = all_configs[env.to_sym], all_configs[:shared]
 
-        if config.is_a?(Hash)
-          ActiveSupport::OrderedOptions.new.update(shared&.deep_merge(config) || config)
-        else
-          config || shared
+        if shared
+          config = {} if config.nil? && shared.is_a?(Hash)
+          if config.is_a?(Hash) && shared.is_a?(Hash)
+            config = shared.deep_merge(config)
+          elsif config.nil?
+            config = shared
+          end
         end
+
+        if config.is_a?(Hash)
+          config = ActiveSupport::OrderedOptions.new.update(config)
+        end
+
+        config
       else
         raise "Could not load configuration. No such file - #{yaml}"
       end
@@ -260,8 +268,7 @@ module Rails
     # Stores some of the Rails initial environment parameters which
     # will be used by middlewares and engines to configure themselves.
     def env_config
-      @app_env_config ||= begin
-        super.merge(
+      @app_env_config ||= super.merge(
           "action_dispatch.parameter_filter" => config.filter_parameters,
           "action_dispatch.redirect_filter" => config.filter_redirect,
           "action_dispatch.secret_key_base" => secret_key_base,
@@ -287,9 +294,8 @@ module Rails
           "action_dispatch.content_security_policy_report_only" => config.content_security_policy_report_only,
           "action_dispatch.content_security_policy_nonce_generator" => config.content_security_policy_nonce_generator,
           "action_dispatch.content_security_policy_nonce_directives" => config.content_security_policy_nonce_directives,
-          "action_dispatch.feature_policy" => config.feature_policy,
+          "action_dispatch.permissions_policy" => config.permissions_policy,
         )
-      end
     end
 
     # If you try to define a set of Rake tasks on the instance, these will get
@@ -321,6 +327,12 @@ module Rails
     # to the +generators+ method defined in Rails::Railtie.
     def generators(&blk)
       self.class.generators(&blk)
+    end
+
+    # Sends any server called in the instance of a new application up
+    # to the +server+ method defined in Rails::Railtie.
+    def server(&blk)
+      self.class.server(&blk)
     end
 
     # Sends the +isolate_namespace+ method up to the class method.
@@ -534,6 +546,11 @@ module Rails
 
     def run_console_blocks(app) #:nodoc:
       railties.each { |r| r.run_console_blocks(app) }
+      super
+    end
+
+    def run_server_blocks(app) #:nodoc:
+      railties.each { |r| r.run_server_blocks(app) }
       super
     end
 

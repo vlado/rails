@@ -254,35 +254,33 @@ module ActiveRecord
         end
       end
 
-      if ActiveRecord::Base.connection.prepared_statements
-        def test_exec_with_binds
-          with_example_table do
-            string = @connection.quote("foo")
-            @connection.exec_query("INSERT INTO ex (id, data) VALUES (1, #{string})")
+      def test_exec_with_binds
+        with_example_table do
+          string = @connection.quote("foo")
+          @connection.exec_query("INSERT INTO ex (id, data) VALUES (1, #{string})")
 
-            bind = Relation::QueryAttribute.new("id", 1, Type::Value.new)
-            result = @connection.exec_query("SELECT id, data FROM ex WHERE id = $1", nil, [bind])
+          bind = Relation::QueryAttribute.new("id", 1, Type::Value.new)
+          result = @connection.exec_query("SELECT id, data FROM ex WHERE id = $1", nil, [bind])
 
-            assert_equal 1, result.rows.length
-            assert_equal 2, result.columns.length
+          assert_equal 1, result.rows.length
+          assert_equal 2, result.columns.length
 
-            assert_equal [[1, "foo"]], result.rows
-          end
+          assert_equal [[1, "foo"]], result.rows
         end
+      end
 
-        def test_exec_typecasts_bind_vals
-          with_example_table do
-            string = @connection.quote("foo")
-            @connection.exec_query("INSERT INTO ex (id, data) VALUES (1, #{string})")
+      def test_exec_typecasts_bind_vals
+        with_example_table do
+          string = @connection.quote("foo")
+          @connection.exec_query("INSERT INTO ex (id, data) VALUES (1, #{string})")
 
-            bind = Relation::QueryAttribute.new("id", "1-fuu", Type::Integer.new)
-            result = @connection.exec_query("SELECT id, data FROM ex WHERE id = $1", nil, [bind])
+          bind = Relation::QueryAttribute.new("id", "1-fuu", Type::Integer.new)
+          result = @connection.exec_query("SELECT id, data FROM ex WHERE id = $1", nil, [bind])
 
-            assert_equal 1, result.rows.length
-            assert_equal 2, result.columns.length
+          assert_equal 1, result.rows.length
+          assert_equal 2, result.columns.length
 
-            assert_equal [[1, "foo"]], result.rows
-          end
+          assert_equal [[1, "foo"]], result.rows
         end
       end
 
@@ -432,85 +430,6 @@ module ActiveRecord
 
           first_number.save!
           assert_equal 4, first_number.reload.number
-        end
-      end
-
-      def test_errors_when_an_insert_query_is_called_while_preventing_writes
-        with_example_table do
-          assert_raises(ActiveRecord::ReadOnlyError) do
-            @connection_handler.while_preventing_writes do
-              @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
-            end
-          end
-        end
-      end
-
-      def test_errors_when_an_update_query_is_called_while_preventing_writes
-        with_example_table do
-          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
-
-          assert_raises(ActiveRecord::ReadOnlyError) do
-            @connection_handler.while_preventing_writes do
-              @connection.execute("UPDATE ex SET data = '9989' WHERE data = '138853948594'")
-            end
-          end
-        end
-      end
-
-      def test_errors_when_a_delete_query_is_called_while_preventing_writes
-        with_example_table do
-          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
-
-          assert_raises(ActiveRecord::ReadOnlyError) do
-            @connection_handler.while_preventing_writes do
-              @connection.execute("DELETE FROM ex where data = '138853948594'")
-            end
-          end
-        end
-      end
-
-      def test_doesnt_error_when_a_select_query_is_called_while_preventing_writes
-        with_example_table do
-          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
-
-          @connection_handler.while_preventing_writes do
-            assert_equal 1, @connection.execute("SELECT * FROM ex WHERE data = '138853948594'").entries.count
-          end
-        end
-      end
-
-      def test_doesnt_error_when_a_show_query_is_called_while_preventing_writes
-        @connection_handler.while_preventing_writes do
-          assert_equal 1, @connection.execute("SHOW TIME ZONE").entries.count
-        end
-      end
-
-      def test_doesnt_error_when_a_set_query_is_called_while_preventing_writes
-        @connection_handler.while_preventing_writes do
-          assert_equal [], @connection.execute("SET standard_conforming_strings = on").entries
-        end
-      end
-
-      def test_doesnt_error_when_a_read_query_with_leading_chars_is_called_while_preventing_writes
-        with_example_table do
-          @connection.execute("INSERT INTO ex (data) VALUES ('138853948594')")
-
-          @connection_handler.while_preventing_writes do
-            assert_equal 1, @connection.execute("/*action:index*/(\n( SELECT * FROM ex WHERE data = '138853948594' ) )").entries.count
-          end
-        end
-      end
-
-      def test_doesnt_error_when_a_read_query_with_cursors_is_called_while_preventing_writes
-        with_example_table do
-          @connection_handler.while_preventing_writes do
-            @connection.transaction do
-              assert_equal [], @connection.execute("DECLARE cur_ex CURSOR FOR SELECT * FROM ex").entries
-              assert_equal [], @connection.execute("FETCH cur_ex").entries
-              assert_equal [], @connection.execute("MOVE cur_ex").entries
-              assert_equal [], @connection.execute("CLOSE cur_ex").entries
-            end
-          end
         end
       end
 

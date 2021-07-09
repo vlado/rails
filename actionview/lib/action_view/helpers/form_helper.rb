@@ -2,7 +2,7 @@
 
 require "cgi"
 require "action_view/helpers/date_helper"
-require "action_view/helpers/tag_helper"
+require "action_view/helpers/url_helper"
 require "action_view/helpers/form_tag_helper"
 require "action_view/helpers/active_model_helper"
 require "action_view/model_naming"
@@ -11,7 +11,6 @@ require "active_support/core_ext/module/attribute_accessors"
 require "active_support/core_ext/hash/slice"
 require "active_support/core_ext/string/output_safety"
 require "active_support/core_ext/string/inflections"
-require "active_support/core_ext/symbol/starts_ends_with"
 
 module ActionView
   # = Action View Form Helpers
@@ -186,8 +185,7 @@ module ActionView
       #   get the authenticity token from the <tt>meta</tt> tag, so embedding is
       #   unnecessary unless you support browsers without JavaScript.
       # * <tt>:remote</tt> - If set to true, will allow the Unobtrusive
-      #   JavaScript drivers to control the submit behavior. By default this
-      #   behavior is an ajax submit.
+      #   JavaScript drivers to control the submit behavior.
       # * <tt>:enforce_utf8</tt> - If set to false, a hidden input with name
       #   utf8 is not output.
       # * <tt>:html</tt> - Optional HTML attributes for the form tag.
@@ -323,10 +321,8 @@ module ActionView
       #    remote: true
       #
       # in the options hash creates a form that will allow the unobtrusive JavaScript drivers to modify its
-      # behavior. The expected default behavior is an XMLHttpRequest in the background instead of the regular
-      # POST arrangement, but ultimately the behavior is the choice of the JavaScript driver implementor.
-      # Even though it's using JavaScript to serialize the form elements, the form submission will work just like
-      # a regular submission as viewed by the receiving side (all elements available in <tt>params</tt>).
+      # behavior. The form submission will work just like a regular submission as viewed by the receiving
+      # side (all elements available in <tt>params</tt>).
       #
       # Example:
       #
@@ -536,11 +532,6 @@ module ActionView
       # accessible as <tt>params[:title]</tt> and <tt>params[:post][:title]</tt>
       # respectively.
       #
-      # By default +form_with+ attaches the <tt>data-remote</tt> attribute
-      # submitting the form via an XMLHTTPRequest in the background if an
-      # Unobtrusive JavaScript driver, like rails-ujs, is used. See the
-      # <tt>:local</tt> option for more.
-      #
       # For ease of comparison the examples above left out the submit button,
       # as well as the auto generated hidden fields that enable UTF-8 support
       # and adds an authenticity token needed for cross site request forgery
@@ -612,8 +603,16 @@ module ActionView
       #   This is helpful when fragment-caching the form. Remote forms
       #   get the authenticity token from the <tt>meta</tt> tag, so embedding is
       #   unnecessary unless you support browsers without JavaScript.
-      # * <tt>:local</tt> - By default form submits are remote and unobtrusive XHRs.
-      #   Disable remote submits with <tt>local: true</tt>.
+      # * <tt>:local</tt> - Whether to use standard HTTP form submission.
+      #   When set to <tt>true</tt>, the form is submitted via standard HTTP.
+      #   When set to <tt>false</tt>, the form is submitted as a "remote form", which
+      #   is handled by Rails UJS as an XHR. When unspecified, the behavior is derived
+      #   from <tt>config.action_view.form_with_generates_remote_forms</tt> where the
+      #   config's value is actually the inverse of what <tt>local</tt>'s value would be.
+      #   As of Rails 6.1, that configuration option defaults to <tt>false</tt>
+      #   (which has the equivalent effect of passing <tt>local: true</tt>).
+      #   In previous versions of Rails, that configuration option defaults to
+      #   <tt>true</tt> (the equivalent of passing <tt>local: false</tt>).
       # * <tt>:skip_enforcing_utf8</tt> - If set to true, a hidden input with name
       #   utf8 is not output.
       # * <tt>:builder</tt> - Override the object used to build the form.
@@ -1110,6 +1109,16 @@ module ActionView
       #
       #   label(:post, :privacy, "Public Post", value: "public")
       #   # => <label for="post_privacy_public">Public Post</label>
+      #
+      #   label(:post, :cost) do |translation|
+      #     content_tag(:span, translation, class: "cost_label")
+      #   end
+      #   # => <label for="post_cost"><span class="cost_label">Total cost</span></label>
+      #
+      #   label(:post, :cost) do |builder|
+      #     content_tag(:span, builder.translation, class: "cost_label")
+      #   end
+      #   # => <label for="post_cost"><span class="cost_label">Total cost</span></label>
       #
       #   label(:post, :terms) do
       #     raw('Accept <a href="/terms">Terms</a>.')
@@ -1681,6 +1690,47 @@ module ActionView
         @index = options[:index] || options[:child_index]
       end
 
+      # Generate an HTML <tt>id</tt> attribute value.
+      #
+      # return the <tt><form></tt> element's <tt>id</tt> attribute.
+      #
+      #   <%= form_for @post do |f| %>
+      #     <%# ... %>
+      #
+      #     <% content_for :sticky_footer do %>
+      #       <%= form.button(form: f.id) %>
+      #     <% end %>
+      #   <% end %>
+      #
+      # In the example above, the <tt>:sticky_footer</tt> content area will
+      # exist outside of the <tt><form></tt> element. By declaring the
+      # <tt>form</tt> HTML attribute, we hint to the browser that the generated
+      # <tt><button></tt> element should be treated as the <tt><form></tt>
+      # element's submit button, regardless of where it exists in the DOM.
+      def id
+        options.dig(:html, :id)
+      end
+
+      # Generate an HTML <tt>id</tt> attribute value for the given field
+      #
+      # Return the value generated by the <tt>FormBuilder</tt> for the given
+      # attribute name.
+      #
+      #   <%= form_for @post do |f| %>
+      #     <%= f.label :title %>
+      #     <%= f.text_field :title, aria: { describedby: f.field_id(:title, :error) } %>
+      #     <%= tag.span("is blank", id: f.field_id(:title, :error) %>
+      #   <% end %>
+      #
+      # In the example above, the <tt><input type="text"></tt> element built by
+      # the call to <tt>FormBuilder#text_field</tt> declares an
+      # <tt>aria-describedby</tt> attribute referencing the <tt><span></tt>
+      # element, sharing a common <tt>id</tt> root (<tt>post_title</tt>, in this
+      # case).
+      def field_id(method, *suffixes, index: @index)
+        @template.field_id(@object || @object_name, method, *suffixes, index: @index)
+      end
+
       ##
       # :method: text_field
       #
@@ -2245,6 +2295,24 @@ module ActionView
       #   label(:privacy, "Public Post", value: "public")
       #   # => <label for="post_privacy_public">Public Post</label>
       #
+      #   label(:cost) do |translation|
+      #     content_tag(:span, translation, class: "cost_label")
+      #   end
+      #   # => <label for="post_cost"><span class="cost_label">Total cost</span></label>
+      #
+      #   label(:cost) do |builder|
+      #     content_tag(:span, builder.translation, class: "cost_label")
+      #   end
+      #   # => <label for="post_cost"><span class="cost_label">Total cost</span></label>
+      #
+      #   label(:cost) do |builder|
+      #     content_tag(:span, builder.translation, class: [
+      #       "cost_label",
+      #       ("error_label" if builder.object.errors.include?(:cost))
+      #     ])
+      #   end
+      #   # => <label for="post_cost"><span class="cost_label error_label">Total cost</span></label>
+      #
       #   label(:terms) do
       #     raw('Accept <a href="/terms">Terms</a>.')
       #   end
@@ -2364,7 +2432,7 @@ module ActionView
       # hash with +options+. These options will be tagged onto the HTML as an HTML element attribute as in the example
       # shown.
       #
-      # Using this method inside a +form_for+ block will set the enclosing form's encoding to <tt>multipart/form-data</tt>.
+      # Using this method inside a +form_with+ block will set the enclosing form's encoding to <tt>multipart/form-data</tt>.
       #
       # ==== Options
       # * Creates standard HTML attributes for the tag.
@@ -2468,10 +2536,27 @@ module ActionView
       #   #      <strong>Ask me!</strong>
       #   #    </button>
       #
+      #   button do |text|
+      #     content_tag(:strong, text)
+      #   end
+      #   # => <button name='button' type='submit'>
+      #   #      <strong>Create post</strong>
+      #   #    </button>
+      #
       def button(value = nil, options = {}, &block)
         value, options = nil, value if value.is_a?(Hash)
         value ||= submit_default_value
-        @template.button_tag(value, options, &block)
+
+        if block_given?
+          value = @template.capture { yield(value) }
+        end
+
+        formmethod = options[:formmethod]
+        if formmethod.present? && !/post|get/i.match?(formmethod) && !options.key?(:name) && !options.key?(:value)
+          options.merge! formmethod: :post, name: "_method", value: formmethod
+        end
+
+        @template.button_tag(value, options)
       end
 
       def emitted_hidden_id? # :nodoc:
@@ -2531,7 +2616,9 @@ module ActionView
               else
                 options[:child_index] = nested_child_index(name)
               end
-              output << fields_for_nested_model("#{name}[#{options[:child_index]}]", child, options, block)
+              if content = fields_for_nested_model("#{name}[#{options[:child_index]}]", child, options, block)
+                output << content
+              end
             end
             output
           elsif association

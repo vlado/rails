@@ -12,24 +12,22 @@ class PostgresqlIntervalTest < ActiveRecord::PostgreSQLTestCase
     attribute :default_term, :interval
     attribute :all_terms,    :interval, array: true
     attribute :legacy_term,  :string
-  end
+  end if current_adapter?(:PostgreSQLAdapter)
 
   class DeprecatedIntervalDataType < ActiveRecord::Base; end
 
   def setup
     @connection = ActiveRecord::Base.connection
-    begin
-      @connection.transaction do
-        @connection.create_table("interval_data_types") do |t|
-          t.interval "maximum_term"
-          t.interval "minimum_term", precision: 3
-          t.interval "default_term", default: "P3Y"
-          t.interval "all_terms", array: true
-          t.interval "legacy_term"
-        end
-        @connection.create_table("deprecated_interval_data_types") do |t|
-          t.interval "duration"
-        end
+    @connection.transaction do
+      @connection.create_table("interval_data_types") do |t|
+        t.interval "maximum_term"
+        t.interval "minimum_term", precision: 3
+        t.interval "default_term", default: "P3Y"
+        t.interval "all_terms", array: true
+        t.interval "legacy_term"
+      end
+      @connection.create_table("deprecated_interval_data_types") do |t|
+        t.interval "duration"
       end
     end
     @column_max = IntervalDataType.columns_hash["maximum_term"]
@@ -86,6 +84,14 @@ class PostgresqlIntervalTest < ActiveRecord::PostgreSQLTestCase
     assert_equal "P1YT2M", i.maximum_term.iso8601
     assert_equal "PT10H",  i.minimum_term.iso8601
     assert_equal "P1DT1H", i.legacy_term
+  end
+
+  def test_average_interval_type
+    IntervalDataType.create!([{ maximum_term: 6.years }, { maximum_term: 4.months }])
+    value = IntervalDataType.average(:maximum_term)
+
+    assert_equal 3.years + 2.months, value
+    assert_instance_of ActiveSupport::Duration, value
   end
 
   def test_deprecated_legacy_type

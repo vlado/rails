@@ -24,12 +24,15 @@ module ActiveSupport
       def subscribe(pattern = nil, callable = nil, monotonic: false, &block)
         subscriber = Subscribers.new(pattern, callable || block, monotonic)
         synchronize do
-          if String === pattern
+          case pattern
+          when String
             @string_subscribers[pattern] << subscriber
             @listeners_for.delete(pattern)
-          else
+          when NilClass, Regexp
             @other_subscribers << subscriber
             @listeners_for.clear
+          else
+            raise ArgumentError,  "pattern must be specified as a String, Regexp or empty"
           end
         end
         subscriber
@@ -67,6 +70,10 @@ module ActiveSupport
         listeners_for(name).each { |s| s.publish(name, *args) }
       end
 
+      def publish_event(event)
+        listeners_for(event.name).each { |s| s.publish_event(event) }
+      end
+
       def listeners_for(name)
         # this is correctly done double-checked locking (Concurrent::Map's lookups have volatile semantics)
         @listeners_for[name] || synchronize do
@@ -91,13 +98,13 @@ module ActiveSupport
           if listener.respond_to?(:start) && listener.respond_to?(:finish)
             subscriber_class = Evented
           else
-            # Doing all this to detect a block like `proc { |x| }` vs
-            # `proc { |*x| }` or `proc { |**x| }`
-            if listener.respond_to?(:parameters)
-              params = listener.parameters
-              if params.length == 1 && params.first.first == :opt
-                subscriber_class = EventObject
-              end
+            # Doing this to detect a single argument block or callable
+            # like `proc { |x| }` vs `proc { |*x| }`, `proc { |**x| }`,
+            # or `proc { |x, **y| }`
+            procish = listener.respond_to?(:parameters) ? listener : listener.method(:call)
+
+            if procish.arity == 1 && procish.parameters.length == 1
+              subscriber_class = EventObject
             end
           end
 
@@ -141,11 +148,20 @@ module ActiveSupport
             @pattern = Matcher.wrap(pattern)
             @delegate = delegate
             @can_publish = delegate.respond_to?(:publish)
+            @can_publish_event = delegate.respond_to?(:publish_event)
           end
 
           def publish(name, *args)
             if @can_publish
               @delegate.publish name, *args
+            end
+          end
+
+          def publish_event(event)
+            if @can_publish_event
+              @delegate.publish_event event
+            else
+              publish(event.name, event.time, event.end, event.transaction_id, event.payload)
             end
           end
 
@@ -217,6 +233,10 @@ module ActiveSupport
             event = stack.pop
             event.payload = payload
             event.finish!
+            @delegate.call event
+          end
+
+          def publish_event(event)
             @delegate.call event
           end
 

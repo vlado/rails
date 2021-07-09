@@ -13,7 +13,7 @@ module Rails
 
       def build_stack
         ActionDispatch::MiddlewareStack.new do |middleware|
-          middleware.use ::ActionDispatch::HostAuthorization, config.hosts, config.action_dispatch.hosts_response_app
+          middleware.use ::ActionDispatch::HostAuthorization, config.hosts, config.action_dispatch.hosts_response_app, **config.host_authorization
 
           if config.force_ssl
             middleware.use ::ActionDispatch::SSL, **config.ssl_options,
@@ -42,15 +42,18 @@ module Rails
 
           middleware.use ::ActionDispatch::Executor, app.executor
 
-          middleware.use ::Rack::Runtime
+          middleware.use ::ActionDispatch::MiddlewareStack::FakeRuntime
           middleware.use ::Rack::MethodOverride unless config.api_only
-          middleware.use ::ActionDispatch::RequestId
+          middleware.use ::ActionDispatch::RequestId, header: config.action_dispatch.request_id_header
           middleware.use ::ActionDispatch::RemoteIp, config.action_dispatch.ip_spoofing_check, config.action_dispatch.trusted_proxies
 
           middleware.use ::Rails::Rack::Logger, config.log_tags
           middleware.use ::ActionDispatch::ShowExceptions, show_exceptions_app
           middleware.use ::ActionDispatch::DebugExceptions, app, config.debug_exception_response_format
-          middleware.use ::ActionDispatch::ActionableExceptions
+
+          if config.consider_all_requests_local
+            middleware.use ::ActionDispatch::ActionableExceptions
+          end
 
           unless config.cache_classes
             middleware.use ::ActionDispatch::Reloader, app.reloader
@@ -64,12 +67,12 @@ module Rails
               config.session_options[:secure] = true
             end
             middleware.use config.session_store, config.session_options
-            middleware.use ::ActionDispatch::Flash
           end
 
           unless config.api_only
+            middleware.use ::ActionDispatch::Flash
             middleware.use ::ActionDispatch::ContentSecurityPolicy::Middleware
-            middleware.use ::ActionDispatch::FeaturePolicy::Middleware
+            middleware.use ::ActionDispatch::PermissionsPolicy::Middleware
           end
 
           middleware.use ::Rack::Head

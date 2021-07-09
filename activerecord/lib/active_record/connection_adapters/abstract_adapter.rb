@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "set"
-require "active_record/connection_adapters/schema_cache"
 require "active_record/connection_adapters/sql_type_metadata"
 require "active_record/connection_adapters/abstract/schema_dumper"
 require "active_record/connection_adapters/abstract/schema_creation"
@@ -37,7 +36,7 @@ module ActiveRecord
       include Savepoints
 
       SIMPLE_INT = /\A\d+\z/
-      COMMENT_REGEX = %r{/\*(?:[^\*]|\*[^/])*\*/}m
+      COMMENT_REGEX = %r{(?:--.*\n)*|/\*(?:[^*]|\*[^/])*\*/}m
 
       attr_accessor :pool
       attr_reader :visitor, :owner, :logger, :lock
@@ -69,7 +68,7 @@ module ActiveRecord
       def self.build_read_query_regexp(*parts) # :nodoc:
         parts += DEFAULT_READ_QUERY
         parts = parts.map { |part| /#{part}/i }
-        /\A(?:[\(\s]|#{COMMENT_REGEX})*#{Regexp.union(*parts)}/
+        /\A(?:[(\s]|#{COMMENT_REGEX})*#{Regexp.union(*parts)}/
       end
 
       def self.quoted_column_names # :nodoc:
@@ -103,6 +102,25 @@ module ActiveRecord
         )
       end
 
+      EXCEPTION_NEVER = { Exception => :never }.freeze # :nodoc:
+      EXCEPTION_IMMEDIATE = { Exception => :immediate }.freeze # :nodoc:
+      private_constant :EXCEPTION_NEVER, :EXCEPTION_IMMEDIATE
+      def with_instrumenter(instrumenter, &block) # :nodoc:
+        Thread.handle_interrupt(EXCEPTION_NEVER) do
+          previous_instrumenter = @instrumenter
+          @instrumenter = instrumenter
+          Thread.handle_interrupt(EXCEPTION_IMMEDIATE, &block)
+        ensure
+          @instrumenter = previous_instrumenter
+        end
+      end
+
+      def check_if_write_query(sql) # :nodoc:
+        if preventing_writes? && write_query?(sql)
+          raise ActiveRecord::ReadOnlyError, "Write query attempted while in readonly mode: #{sql}"
+        end
+      end
+
       def replica?
         @config[:replica] || false
       end
@@ -111,12 +129,21 @@ module ActiveRecord
         @config.fetch(:use_metadata_table, true)
       end
 
-      # Determines whether writes are currently being prevents.
+      # Determines whether writes are currently being prevented.
       #
-      # Returns true if the connection is a replica, or if +prevent_writes+
-      # is set to true.
+      # Returns true if the connection is a replica.
+      #
+      # If the application is using legacy handling, returns
+      # true if +connection_handler.prevent_writes+ is set.
+      #
+      # If the application is using the new connection handling
+      # will return true based on +current_preventing_writes+.
       def preventing_writes?
-        replica? || ActiveRecord::Base.connection_handler.prevent_writes
+        return true if replica?
+        return ActiveRecord::Base.connection_handler.prevent_writes if ActiveRecord.legacy_connection_handling
+        return false if connection_klass.nil?
+
+        connection_klass.current_preventing_writes
       end
 
       def migrations_paths # :nodoc:
@@ -145,9 +172,10 @@ module ActiveRecord
                               end
       end
 
-      def prepared_statements
+      def prepared_statements?
         @prepared_statements && !prepared_statements_disabled_cache.include?(object_id)
       end
+      alias :prepared_statements :prepared_statements?
 
       def prepared_statements_disabled_cache # :nodoc:
         Thread.current[:ar_prepared_statements_disabled_cache] ||= Set.new
@@ -190,6 +218,10 @@ module ActiveRecord
         end
 
         @owner = Thread.current
+      end
+
+      def connection_klass # :nodoc:
+        @pool.connection_klass
       end
 
       def schema_cache
@@ -237,7 +269,7 @@ module ActiveRecord
       end
 
       def unprepared_statement
-        cache = prepared_statements_disabled_cache.add(object_id) if @prepared_statements
+        cache = prepared_statements_disabled_cache.add?(object_id) if @prepared_statements
         yield
       ensure
         cache&.delete(object_id)
@@ -331,13 +363,6 @@ module ActiveRecord
         false
       end
 
-      # Does this adapter support creating foreign key constraints
-      # in the same statement as creating the table?
-      def supports_foreign_keys_in_create?
-        supports_foreign_keys?
-      end
-      deprecate :supports_foreign_keys_in_create?
-
       # Does this adapter support creating check constraints?
       def supports_check_constraints?
         false
@@ -372,12 +397,6 @@ module ActiveRecord
       def supports_comments_in_create?
         false
       end
-
-      # Does this adapter support multi-value insert?
-      def supports_multi_insert?
-        true
-      end
-      deprecate :supports_multi_insert?
 
       # Does this adapter support virtual columns?
       def supports_virtual_columns?
@@ -416,6 +435,15 @@ module ActiveRecord
 
       def supports_insert_conflict_target?
         false
+      end
+
+      def supports_concurrent_connections?
+        true
+      end
+
+      def async_enabled? # :nodoc:
+        supports_concurrent_connections? &&
+          !ActiveRecord.async_query_executor.nil? && !pool.async_executor.nil?
       end
 
       # This is meant to be implemented by the adapters that support extensions
@@ -459,6 +487,11 @@ module ActiveRecord
       # Override to turn off referential integrity while executing <tt>&block</tt>.
       def disable_referential_integrity
         yield
+      end
+
+      # Override to check all foreign key constraints in a database.
+      def all_foreign_keys_valid?
+        true
       end
 
       # CONNECTION MANAGEMENT ====================================
@@ -510,6 +543,12 @@ module ActiveRecord
         # this should be overridden by concrete adapters
       end
 
+      # Removes the connection from the pool and disconnect it.
+      def throw_away!
+        pool.remove self
+        disconnect!
+      end
+
       # Clear any caching the database adapter may be doing.
       def clear_cache!
         @lock.synchronize { @statements.clear } if @statements
@@ -538,7 +577,7 @@ module ActiveRecord
         @connection
       end
 
-      def default_uniqueness_comparison(attribute, value, klass) # :nodoc:
+      def default_uniqueness_comparison(attribute, value) # :nodoc:
         attribute.eq(value)
       end
 
@@ -677,7 +716,7 @@ module ActiveRecord
           exception
         end
 
-        def log(sql, name = "SQL", binds = [], type_casted_binds = [], statement_name = nil) # :doc:
+        def log(sql, name = "SQL", binds = [], type_casted_binds = [], statement_name = nil, async: false) # :doc:
           @instrumenter.instrument(
             "sql.active_record",
             sql:               sql,
@@ -685,6 +724,7 @@ module ActiveRecord
             binds:             binds,
             type_casted_binds: type_casted_binds,
             statement_name:    statement_name,
+            async:             async,
             connection:        self) do
             @lock.synchronize do
               yield

@@ -9,20 +9,21 @@ module ActiveModel
     include ActiveModel::AttributeMethods
 
     included do
-      attribute_method_suffix "="
+      attribute_method_suffix "=", parameters: "value"
       class_attribute :attribute_types, :_default_attributes, instance_accessor: false
       self.attribute_types = Hash.new(Type.default_value)
       self._default_attributes = AttributeSet.new({})
     end
 
     module ClassMethods
-      def attribute(name, type = Type::Value.new, **options)
+      def attribute(name, cast_type = nil, default: NO_DEFAULT_PROVIDED, **options)
         name = name.to_s
-        if type.is_a?(Symbol)
-          type = ActiveModel::Type.lookup(type, **options.except(:default))
-        end
-        self.attribute_types = attribute_types.merge(name => type)
-        define_default_attribute(name, options.fetch(:default, NO_DEFAULT_PROVIDED), type)
+
+        cast_type = Type.lookup(cast_type, **options) if Symbol === cast_type
+        cast_type ||= attribute_types[name]
+
+        self.attribute_types = attribute_types.merge(name => cast_type)
+        define_default_attribute(name, default, cast_type)
         define_attribute_method(name)
       end
 
@@ -46,10 +47,12 @@ module ActiveModel
           ActiveModel::AttributeMethods::AttrNames.define_attribute_accessor_method(
             owner, name, writer: true,
           ) do |temp_method_name, attr_name_expr|
-            owner <<
-              "def #{temp_method_name}(value)" <<
-              "  _write_attribute(#{attr_name_expr}, value)" <<
-              "end"
+            owner.define_cached_method("#{name}=", as: temp_method_name, namespace: :active_model) do |batch|
+              batch <<
+                "def #{temp_method_name}(value)" <<
+                "  _write_attribute(#{attr_name_expr}, value)" <<
+                "end"
+            end
           end
         end
 
@@ -115,29 +118,15 @@ module ActiveModel
     end
 
     def freeze
-      @attributes = @attributes.clone.freeze
+      @attributes = @attributes.clone.freeze unless frozen?
       super
     end
 
     private
-      def write_attribute(attr_name, value)
-        name = attr_name.to_s
-        name = self.class.attribute_aliases[name] || name
-
-        @attributes.write_from_user(name, value)
-      end
-
       def _write_attribute(attr_name, value)
         @attributes.write_from_user(attr_name, value)
       end
       alias :attribute= :_write_attribute
-
-      def read_attribute(attr_name)
-        name = attr_name.to_s
-        name = self.class.attribute_aliases[name] || name
-
-        @attributes.fetch_value(name)
-      end
 
       def attribute(attr_name)
         @attributes.fetch_value(attr_name)

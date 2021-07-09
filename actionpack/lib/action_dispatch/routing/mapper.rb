@@ -4,7 +4,6 @@ require "active_support/core_ext/hash/slice"
 require "active_support/core_ext/enumerable"
 require "active_support/core_ext/array/extract_options"
 require "active_support/core_ext/regexp"
-require "active_support/core_ext/symbol/starts_ends_with"
 require "action_dispatch/routing/redirection"
 require "action_dispatch/routing/endpoint"
 
@@ -1307,6 +1306,16 @@ module ActionDispatch
         #   DELETE    /profile
         #   POST      /profile
         #
+        # If you want instances of a model to work with this resource via
+        # record identification (eg. in +form_with+ or +redirect_to+), you
+        # will need to call resolve[rdoc-ref:CustomUrls#resolve]:
+        #
+        #   resource :profile
+        #   resolve('Profile') { [:profile] }
+        #
+        #   # Enables this to work with singular routes:
+        #   form_with(model: @profile) {}
+        #
         # === Options
         # Takes same options as resources[rdoc-ref:#resources]
         def resource(*resources, &block)
@@ -1704,20 +1713,20 @@ module ActionDispatch
 
           def apply_common_behavior_for(method, resources, options, &block)
             if resources.length > 1
-              resources.each { |r| send(method, r, options, &block) }
+              resources.each { |r| public_send(method, r, options, &block) }
               return true
             end
 
             if options[:shallow]
               options.delete(:shallow)
               shallow do
-                send(method, resources.pop, options, &block)
+                public_send(method, resources.pop, options, &block)
               end
               return true
             end
 
             if resource_scope?
-              nested { send(method, resources.pop, options, &block) }
+              nested { public_send(method, resources.pop, options, &block) }
               return true
             end
 
@@ -1728,7 +1737,7 @@ module ActionDispatch
             scope_options = options.slice!(*RESOURCE_OPTIONS)
             unless scope_options.empty?
               scope(scope_options) do
-                send(method, resources.pop, options, &block)
+                public_send(method, resources.pop, options, &block)
               end
               return true
             end

@@ -73,16 +73,29 @@ module RenderTestCases
   end
 
   def test_render_file
-    assert_equal "Hello world!", assert_deprecated { @view.render(file: "test/hello_world") }
+    template_path = File.expand_path("../fixtures/test/hello_world.erb", __dir__)
+    assert_equal "Hello world!", @view.render(file: template_path)
+  end
+
+  def test_render_file_with_full_path_no_extension
+    template_path = File.expand_path("../fixtures/test/hello_world", __dir__)
+    e = assert_raise(ArgumentError) { @view.render(file: template_path) }
+    assert_match(/File (.+) does not exist/, e.message)
+  end
+
+  def test_render_file_with_invalid_full_path
+    template_path = File.expand_path("../fixtures/test/hello_world_invalid.erb", __dir__)
+    e = assert_raise(ArgumentError) { @view.render(file: template_path) }
+    assert_match(/File (.+) does not exist/, e.message)
+  end
+
+  def test_render_file_with_relative_path
+    template_path = "fixtures/test/hello_world.erb"
+    e = assert_raise(ArgumentError) { @view.render(file: template_path) }
+    assert_match(%r{`render file:` should be given the absolute path to a file. (.+) was given instead}, e.message)
   end
 
   # Test if :formats, :locale etc. options are passed correctly to the resolvers.
-  def test_render_file_with_format
-    assert_match "<h1>No Comment</h1>", assert_deprecated { @view.render(file: "comments/empty", formats: [:html]) }
-    assert_match "<error>No Comment</error>", assert_deprecated { @view.render(file: "comments/empty", formats: [:xml]) }
-    assert_match "<error>No Comment</error>", assert_deprecated { @view.render(file: "comments/empty", formats: :xml) }
-  end
-
   def test_render_template_with_format
     assert_match "<h1>No Comment</h1>", @view.render(template: "comments/empty", formats: [:html])
     assert_match "<error>No Comment</error>", @view.render(template: "comments/empty", formats: [:xml])
@@ -112,26 +125,18 @@ module RenderTestCases
     assert_includes(e.message, "Missing partial /_missing with {:locale=>[:en], :formats=>[:json], :variants=>[], :handlers=>[:raw, :erb, :html, :builder, :ruby]}.")
   end
 
-  def test_render_file_with_locale
-    assert_equal "<h1>Kein Kommentar</h1>", assert_deprecated { @view.render(file: "comments/empty", locale: [:de]) }
-    assert_equal "<h1>Kein Kommentar</h1>", assert_deprecated { @view.render(file: "comments/empty", locale: :de) }
-  end
-
   def test_render_template_with_locale
     assert_equal "<h1>Kein Kommentar</h1>", @view.render(template: "comments/empty", locale: [:de])
+    assert_equal "<h1>Kein Kommentar</h1>", @view.render(template: "comments/empty", locale: :de)
   end
 
   def test_render_template_with_variants
     assert_equal "<h1>No Comment</h1>\n", @view.render(template: "comments/empty", variants: :grid)
   end
 
-  def test_render_file_with_handlers
-    assert_equal "<h1>No Comment</h1>\n", assert_deprecated { @view.render(file: "comments/empty", handlers: [:builder]) }
-    assert_equal "<h1>No Comment</h1>\n", assert_deprecated { @view.render(file: "comments/empty", handlers: :builder) }
-  end
-
   def test_render_template_with_handlers
     assert_equal "<h1>No Comment</h1>\n", @view.render(template: "comments/empty", handlers: [:builder])
+    assert_equal "<h1>No Comment</h1>\n", @view.render(template: "comments/empty", handlers: :builder)
   end
 
   def test_render_raw_template_with_handlers
@@ -157,6 +162,10 @@ module RenderTestCases
     assert_equal "4", @view.render(inline: "(2**2).to_s", type: :ruby)
   end
 
+  def test_render_template_via_symbol_lookup
+    assert_equal "Hello from Ruby code", @view.render(template: :ruby_template)
+  end
+
   def test_render_template_with_localization_on_context_level
     old_locale, @view.locale = @view.locale, :da
     assert_equal "Hey verden", @view.render(template: "test/hello_world")
@@ -175,27 +184,17 @@ module RenderTestCases
     assert_equal "Elastica", @view.render(template: "/shared")
   end
 
-  def test_render_file_with_full_path_no_extension
-    template_path = File.expand_path("../fixtures/test/hello_world", __dir__)
-    assert_equal "Hello world!", assert_deprecated { @view.render(file: template_path) }
+  def test_render_template_with_instance_variable
+    assert_equal "The secret is in the sauce\n", @view.render(template: "test/render_template_with_ivar")
   end
 
-  def test_render_file_with_full_path
-    template_path = File.expand_path("../fixtures/test/hello_world.erb", __dir__)
-    assert_equal "Hello world!", @view.render(file: template_path)
-  end
-
-  def test_render_file_with_instance_variables
-    assert_equal "The secret is in the sauce\n", assert_deprecated { @view.render(file: "test/render_file_with_ivar") }
-  end
-
-  def test_render_file_with_locals
+  def test_render_template_with_locals
     locals = { secret: "in the sauce" }
-    assert_equal "The secret is in the sauce\n", assert_deprecated { @view.render(file: "test/render_file_with_locals", locals: locals) }
+    assert_equal "The secret is in the sauce\n", @view.render(template: "test/render_template_with_locals", locals: locals)
   end
 
-  def test_render_file_not_using_full_path_with_dot_in_path
-    assert_equal "The secret is in the sauce\n", assert_deprecated { @view.render(file: "test/dot.directory/render_file_with_ivar") }
+  def test_render_template_with_dot_in_path
+    assert_equal "The secret is in the sauce\n", @view.render(template: "test/dot.directory/render_template_with_ivar")
   end
 
   def test_render_partial_from_default
@@ -309,20 +308,20 @@ module RenderTestCases
     assert_equal "    10: <p>Tenth paragraph</p>", error_lines.third
   end
 
+  def test_render_template_with_errors
+    e = assert_raises(ActionView::Template::Error) { assert_deprecated { @view.render(template: "test/_raise") } }
+    assert_match %r!method.*doesnt_exist!, e.message
+    assert_equal "", e.sub_template_message
+    assert_equal "1", e.line_number
+    assert_equal "1: <%= doesnt_exist %>", e.annotated_source_code[0].strip
+    assert_equal File.expand_path("#{FIXTURE_LOAD_PATH}/test/_raise.html.erb"), e.file_name
+  end
+
   def test_render_sub_template_with_errors
     e = assert_raises(ActionView::Template::Error) { @view.render(template: "test/sub_template_raise") }
     assert_match %r!method.*doesnt_exist!, e.message
     assert_match %r{Trace of template inclusion: .*test/sub_template_raise\.html\.erb}, e.sub_template_message
     assert_equal "1", e.line_number
-    assert_equal File.expand_path("#{FIXTURE_LOAD_PATH}/test/_raise.html.erb"), e.file_name
-  end
-
-  def test_render_file_with_errors
-    e = assert_raises(ActionView::Template::Error) { assert_deprecated { @view.render(file: File.expand_path("test/_raise", FIXTURE_LOAD_PATH)) } }
-    assert_match %r!method.*doesnt_exist!, e.message
-    assert_equal "", e.sub_template_message
-    assert_equal "1", e.line_number
-    assert_equal "1: <%= doesnt_exist %>", e.annotated_source_code[0].strip
     assert_equal File.expand_path("#{FIXTURE_LOAD_PATH}/test/_raise.html.erb"), e.file_name
   end
 
@@ -347,13 +346,6 @@ module RenderTestCases
 
   def test_render_partial_collection
     assert_equal "Hello: davidHello: mary", @view.render(partial: "test/customer", collection: [ Customer.new("david"), Customer.new("mary") ])
-  end
-
-  def test_render_partial_collection_with_partial_name_containing_dot
-    assert_deprecated do
-      assert_equal "Hello: davidHello: mary",
-        @view.render(partial: "test/customer.mobile", collection: [ Customer.new("david"), Customer.new("mary") ])
-    end
   end
 
   def test_render_partial_collection_as_by_string
@@ -396,23 +388,9 @@ module RenderTestCases
     assert_equal "Hello: davidHello: mary", @view.render(partial: "test/customer", collection: customers)
   end
 
-  def test_deprecated_constructor
-    assert_deprecated do
-      ActionView::Base.new
-    end
-
-    assert_deprecated do
-      ActionView::Base.new ["/a"]
-    end
-
-    assert_deprecated do
-      ActionView::Base.new ActionView::PathSet.new ["/a"]
-    end
-  end
-
   def test_without_compiled_method_container_is_deprecated
     view = ActionView::Base.with_view_paths(ActionController::Base.view_paths)
-    assert_deprecated("ActionView::Base instances must implement `compiled_method_container`") do
+    assert_raises(NotImplementedError) do
       assert_equal "Hello world!", view.render(template: "test/hello_world")
     end
   end
@@ -528,15 +506,6 @@ module RenderTestCases
 
   def test_render_inline_with_render_from_to_proc
     ActionView::Template.register_template_handler :ruby_handler, lambda { |_, source| source }
-    assert_equal "3", @view.render(inline: "(1 + 2).to_s", type: :ruby_handler)
-  ensure
-    ActionView::Template.unregister_template_handler :ruby_handler
-  end
-
-  def test_render_inline_with_render_from_to_proc_deprecated
-    assert_deprecated do
-      ActionView::Template.register_template_handler :ruby_handler, :source.to_proc
-    end
     assert_equal "3", @view.render(inline: "(1 + 2).to_s", type: :ruby_handler)
   ensure
     ActionView::Template.unregister_template_handler :ruby_handler
@@ -671,6 +640,36 @@ module RenderTestCases
     assert_match "Missing partial /_true with", e.message
   end
 
+  def test_render_partial_provides_spellcheck
+    e = assert_raises(ActionView::MissingTemplate) { @view.render(partial: "test/partail") }
+    assert_match %r{Did you mean\?  test/partial\n *test/partialhtml}, e.message
+  end
+
+  def test_spellcheck_doesnt_list_directories
+    e = assert_raises(ActionView::MissingTemplate) { @view.render(partial: "test/directory") }
+    assert_match %r{Did you mean\?}, e.message
+    assert_no_match %r{Did you mean\?  test/directory\n}, e.message # test/hello is a directory
+  end
+
+  def test_spellcheck_only_lists_templates
+    e = assert_raises(ActionView::MissingTemplate) { @view.render(template: "test/partial") }
+
+    assert_match %r{Did you mean\?}, e.message
+    assert_no_match %r{Did you mean\?  test/partial\n}, e.message
+  end
+
+  def test_spellcheck_only_lists_partials
+    e = assert_raises(ActionView::MissingTemplate) { @view.render(partial: "test/template") }
+
+    assert_match %r{Did you mean\?}, e.message
+    assert_no_match %r{Did you mean\?  test/template\n}, e.message
+  end
+
+  def test_render_partial_wrong_details_no_spellcheck
+    e = assert_raises(ActionView::MissingTemplate) { @view.render(partial: "test/partial_with_only_html_version", formats: [:xml]) }
+    assert_no_match %r{Did you mean\?}, e.message
+  end
+
   def test_render_with_nested_layout
     assert_equal %(<title>title</title>\n\n<div id="column">column</div>\n<div id="content">content</div>\n),
       @view.render(template: "test/nested_layout", layout: "layouts/yield")
@@ -712,7 +711,7 @@ class CachedViewRenderTest < ActiveSupport::TestCase
   def setup
     ActionView::LookupContext::DetailsKey.clear
     view_paths = ActionController::Base.view_paths
-    assert_equal ActionView::OptimizedFileSystemResolver, view_paths.first.class
+    assert_equal ActionView::FileSystemResolver, view_paths.first.class
     setup_view(view_paths)
   end
 
@@ -786,7 +785,7 @@ class CachedCollectionViewRenderTest < ActiveSupport::TestCase
     ActionView::LookupContext::DetailsKey.clear
 
     view_paths = ActionController::Base.view_paths
-    assert_equal ActionView::OptimizedFileSystemResolver, view_paths.first.class
+    assert_equal ActionView::FileSystemResolver, view_paths.first.class
 
     ActionView::PartialRenderer.collection_cache = ActiveSupport::Cache::MemoryStore.new
 

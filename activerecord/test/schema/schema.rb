@@ -8,13 +8,6 @@ ActiveRecord::Schema.define do
   #                                                                     #
   # ------------------------------------------------------------------- #
 
-  case_sensitive_options =
-    if current_adapter?(:Mysql2Adapter)
-      { collation: "utf8mb4_bin" }
-    else
-      {}
-    end
-
   create_table :accounts, force: true do |t|
     t.references :firm, index: false
     t.string  :firm_name
@@ -93,6 +86,7 @@ ActiveRecord::Schema.define do
     t.string :name
     t.binary :data
     t.binary :short_data, limit: 2048
+    t.blob :blob_data
   end
 
   create_table :birds, force: true do |t|
@@ -115,8 +109,9 @@ ActiveRecord::Schema.define do
     t.column :font_size, :integer, **default_zero
     t.column :difficulty, :integer, **default_zero
     t.column :cover, :string, default: "hard"
-    t.string :isbn, **case_sensitive_options
+    t.string :isbn
     t.string :external_id
+    t.column :original_name, :string
     t.datetime :published_on
     t.boolean :boolean_status
     t.index [:author_id, :name], unique: true
@@ -127,6 +122,16 @@ ActiveRecord::Schema.define do
     t.datetime :created_at
     t.datetime :updated_at
     t.date :updated_on
+  end
+
+  create_table :encrypted_books, id: :integer, force: true do |t|
+    t.references :author
+    t.string :format
+    t.column :name, :string
+    t.column :original_name, :string
+
+    t.datetime :created_at
+    t.datetime :updated_at
   end
 
   create_table :booleans, force: true do |t|
@@ -159,13 +164,23 @@ ActiveRecord::Schema.define do
 
   create_table :carriers, force: true
 
+  create_table :carts, force: true, primary_key: [:shop_id, :id] do |t|
+    if current_adapter?(:Mysql2Adapter)
+      t.bigint :id, index: true, auto_increment: true, null: false
+    else
+      t.bigint :id, index: true, null: false
+    end
+    t.bigint :shop_id
+    t.string :title
+  end
+
   create_table :categories, force: true do |t|
     t.string :name, null: false
     t.string :type
     t.integer :categorizations_count
   end
 
-  create_table :categories_posts, force: true, id: false do |t|
+  create_table :categories_posts, force: true do |t|
     t.integer :category_id, null: false
     t.integer :post_id, null: false
   end
@@ -216,12 +231,17 @@ ActiveRecord::Schema.define do
     t.integer :children_count, default: 0
     t.integer :parent_id
     t.references :author, polymorphic: true
+    # The type of the attribute is a string to make sure preload work when types don't match.
+    # See #14855.
     t.string :resource_id
     t.string :resource_type
+    t.integer :origin_id
+    t.string :origin_type
     t.integer :developer_id
     t.datetime :updated_at
     t.datetime :deleted_at
     t.integer :comments
+    t.integer :company
   end
 
   create_table :companies, force: true do |t|
@@ -261,11 +281,14 @@ ActiveRecord::Schema.define do
     t.string :system
     t.integer :developer, null: false
     t.integer :extendedWarranty, null: false
+    t.integer :timezone
+    t.timestamps
   end
 
   create_table :computers_developers, id: false, force: true do |t|
     t.references :computer
     t.references :developer
+    t.timestamps
   end
 
   create_table :contracts, force: true do |t|
@@ -290,7 +313,7 @@ ActiveRecord::Schema.define do
   end
 
   create_table :dashboards, force: true, id: false do |t|
-    t.string :dashboard_id, **case_sensitive_options
+    t.string :dashboard_id
     t.string :name
   end
 
@@ -305,38 +328,41 @@ ActiveRecord::Schema.define do
     t.boolean :deleted
   end
 
+  create_table :discounts, force: true do |t|
+    t.integer :amount
+  end
+
   create_table :dl_keyed_belongs_tos, force: true, id: false do |t|
     t.primary_key :belongs_key
     t.references :destroy_async_parent
   end
 
   create_table :dl_keyed_belongs_to_soft_deletes, force: true do |t|
-    t.references :destroy_async_parent_soft_delete,
-      index: { name: :soft_del_parent }
+    t.references :destroy_async_parent_soft_delete, index: { name: :soft_del_parent }
     t.boolean :deleted
   end
 
   create_table :dl_keyed_has_ones, force: true, id: false do |t|
-   t.primary_key :has_one_key
+    t.primary_key :has_one_key
 
-   t.references :destroy_async_parent
-   t.references :destroy_async_parent_soft_delete
- end
+    t.references :destroy_async_parent
+    t.references :destroy_async_parent_soft_delete
+  end
 
   create_table :dl_keyed_has_manies, force: true, id: false do |t|
-   t.primary_key :many_key
-   t.references :destroy_async_parent
- end
+    t.primary_key :many_key
+    t.references :destroy_async_parent
+  end
 
   create_table :dl_keyed_has_many_throughs, force: true, id: false do |t|
-   t.primary_key :through_key
- end
+    t.primary_key :through_key
+  end
 
   create_table :dl_keyed_joins, force: true, id: false do |t|
-   t.primary_key :joins_key
-   t.references :destroy_async_parent
-   t.references :dl_keyed_has_many_through
- end
+    t.primary_key :joins_key
+    t.references :destroy_async_parent
+    t.references :dl_keyed_has_many_through
+  end
 
   create_table :developers, force: true do |t|
     t.string   :name
@@ -403,7 +429,8 @@ ActiveRecord::Schema.define do
   end
 
   create_table :essays, force: true do |t|
-    t.string :name, **case_sensitive_options
+    t.string :type
+    t.string :name
     t.string :writer_id
     t.string :writer_type
     t.string :category_id
@@ -412,7 +439,7 @@ ActiveRecord::Schema.define do
   end
 
   create_table :events, force: true do |t|
-    t.string :title, limit: 5, **case_sensitive_options
+    t.string :title, limit: 5
   end
 
   create_table :eyes, force: true do |t|
@@ -454,7 +481,7 @@ ActiveRecord::Schema.define do
   end
 
   create_table :guids, force: true do |t|
-    t.column :key, :string, **case_sensitive_options
+    t.column :key, :string
   end
 
   create_table :guitars, force: true do |t|
@@ -462,8 +489,8 @@ ActiveRecord::Schema.define do
   end
 
   create_table :inept_wizards, force: true do |t|
-    t.column :name, :string, null: false, **case_sensitive_options
-    t.column :city, :string, null: false, **case_sensitive_options
+    t.column :name, :string, null: false
+    t.column :city, :string, null: false
     t.column :type, :string
   end
 
@@ -538,6 +565,11 @@ ActiveRecord::Schema.define do
     t.integer :amount
   end
 
+  create_table :line_item_discount_applications, force: true do |t|
+    t.integer :line_item_id
+    t.integer :discount_id
+  end
+
   create_table :lions, force: true do |t|
     t.integer :gender
     t.boolean :is_vegetarian, default: false
@@ -584,7 +616,7 @@ ActiveRecord::Schema.define do
   create_table :memberships, force: true do |t|
     t.datetime :joined_on
     t.integer :club_id, :member_id
-    t.boolean :favourite, default: false
+    t.boolean :favorite, default: false
     t.integer :type
     t.datetime :created_at
     t.datetime :updated_at
@@ -649,6 +681,7 @@ ActiveRecord::Schema.define do
     t.decimal :my_house_population, precision: 2, scale: 0
     t.decimal :decimal_number
     t.decimal :decimal_number_with_default, precision: 3, scale: 2, default: 2.78
+    t.numeric :numeric_number
     t.float   :temperature
     t.decimal :decimal_number_big_precision, precision: 20
     # Oracle/SQLServer supports precision up to 38
@@ -733,7 +766,14 @@ ActiveRecord::Schema.define do
       t.references :pirate, foreign_key: true
     end
 
+    # used by tests that do `Parrot.has_and_belongs_to_many :treasures` (the default)
     create_table :parrots_treasures, id: false, force: true do |t|
+      t.references :parrot, foreign_key: true
+      t.references :treasure, foreign_key: true
+    end
+
+    # used by tests that do `Parrot.has_many :treasures, through: :parrot_treasures`, and don't want to override the through relation's `table_name`
+    create_table :parrot_treasures, id: false, force: true do |t|
       t.references :parrot, foreign_key: true
       t.references :treasure, foreign_key: true
     end
@@ -796,6 +836,11 @@ ActiveRecord::Schema.define do
     t.integer :indestructible_tags_count, default: 0
     t.integer :tags_with_destroy_count, default: 0
     t.integer :tags_with_nullify_count, default: 0
+  end
+
+  create_table :postesques, force: true do |t|
+    t.string :author_name
+    t.string :author_id
   end
 
   create_table :serialized_posts, force: true do |t|
@@ -866,8 +911,13 @@ ActiveRecord::Schema.define do
   create_table :references, force: true do |t|
     t.integer :person_id
     t.integer :job_id
-    t.boolean :favourite
+    t.boolean :favorite
     t.integer :lock_version, default: 0
+  end
+
+  create_table :rooms, force: true do |t|
+    t.references :user
+    t.references :owner
   end
 
   disable_referential_integrity do
@@ -893,6 +943,16 @@ ActiveRecord::Schema.define do
     t.integer :paint_id
     t.string  :shape_type
     t.integer :shape_id
+  end
+
+  create_table :shipping_lines, force: true do |t|
+    t.integer :invoice_id
+    t.integer :amount
+  end
+
+  create_table :shipping_line_discount_applications, force: true do |t|
+    t.integer :shipping_line_id
+    t.integer :discount_id
   end
 
   create_table :ships, force: true do |t|
@@ -988,8 +1048,8 @@ ActiveRecord::Schema.define do
   end
 
   create_table :topics, force: true do |t|
-    t.string   :title, limit: 250, **case_sensitive_options
-    t.string   :author_name, **case_sensitive_options
+    t.string   :title, limit: 250
+    t.string   :author_name
     t.string   :author_email_address
     if supports_datetime_with_precision?
       t.datetime :written_on, precision: 6
@@ -1001,10 +1061,10 @@ ActiveRecord::Schema.define do
     # use VARCHAR2(4000) instead of CLOB datatype as CLOB data type has many limitations in
     # Oracle SELECT WHERE clause which causes many unit test failures
     if current_adapter?(:OracleAdapter)
-      t.string   :content, limit: 4000, **case_sensitive_options
+      t.string   :content, limit: 4000
       t.string   :important, limit: 4000
     else
-      t.text     :content, **case_sensitive_options
+      t.text     :content
       t.text     :important
     end
     t.boolean  :approved, default: true
@@ -1093,6 +1153,10 @@ ActiveRecord::Schema.define do
     t.string :title
   end
 
+  create_table :strict_zines, force: true do |t|
+    t.string :title
+  end
+
   create_table :wheels, force: true do |t|
     t.integer :size
     t.references :wheelable, polymorphic: true
@@ -1174,6 +1238,16 @@ ActiveRecord::Schema.define do
     create_table :fk_test_has_fk, force: true do |t|
       t.references :fk, null: false
       t.foreign_key :fk_test_has_pk, column: "fk_id", name: "fk_name", primary_key: "pk_id"
+    end
+  end
+
+  disable_referential_integrity do
+    create_table :fk_object_to_point_tos, force: :cascade do |t|
+    end
+
+    create_table :fk_pointing_to_non_existent_objects, force: true do |t|
+      t.references :fk_object_to_point_to, null: false, index: false
+      t.foreign_key :fk_object_to_point_tos, column: "fk_object_to_point_to_id", name: "fk_that_will_be_broken"
     end
   end
 

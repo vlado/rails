@@ -43,14 +43,10 @@ class ActiveStorage::VariantTest < ActiveSupport::TestCase
   end
 
   test "monochrome with default variant_processor" do
-    ActiveStorage.variant_processor = nil
-
     blob = create_file_blob(filename: "racecar.jpg")
     variant = blob.variant(monochrome: true).processed
     image = read_image(variant)
     assert_match(/Gray/, image.colorspace)
-  ensure
-    ActiveStorage.variant_processor = :mini_magick
   end
 
   test "disabled variation of JPEG blob" do
@@ -62,60 +58,6 @@ class ActiveStorage::VariantTest < ActiveSupport::TestCase
     assert_equal 100, image.width
     assert_equal 67, image.height
     assert_match(/RGB/, image.colorspace)
-  end
-
-  test "disabled variation of JPEG blob with :combine_options" do
-    blob = create_file_blob(filename: "racecar.jpg")
-    variant = ActiveSupport::Deprecation.silence do
-      blob.variant(combine_options: {
-        resize: "100x100",
-        monochrome: false
-      }).processed
-    end
-    assert_match(/racecar\.jpg/, variant.url)
-
-    image = read_image(variant)
-    assert_equal 100, image.width
-    assert_equal 67, image.height
-    assert_match(/RGB/, image.colorspace)
-  end
-
-  test "disabled variation using :combine_options" do
-    ActiveStorage.variant_processor = nil
-    blob = create_file_blob(filename: "racecar.jpg")
-    variant = ActiveSupport::Deprecation.silence do
-      blob.variant(combine_options: {
-        crop: "100x100+0+0",
-        monochrome: false
-      }).processed
-    end
-    assert_match(/racecar\.jpg/, variant.url)
-
-    image = read_image(variant)
-    assert_equal 100, image.width
-    assert_equal 100, image.height
-    assert_match(/RGB/, image.colorspace)
-  ensure
-    ActiveStorage.variant_processor = :mini_magick
-  end
-
-  test "center-weighted crop of JPEG blob using :combine_options" do
-    ActiveStorage.variant_processor = nil
-    blob = create_file_blob(filename: "racecar.jpg")
-    variant = ActiveSupport::Deprecation.silence do
-      blob.variant(combine_options: {
-        gravity: "center",
-        resize: "100x100^",
-        crop: "100x100+0+0",
-      }).processed
-    end
-    assert_match(/racecar\.jpg/, variant.url)
-
-    image = read_image(variant)
-    assert_equal 100, image.width
-    assert_equal 100, image.height
-  ensure
-    ActiveStorage.variant_processor = :mini_magick
   end
 
   test "center-weighted crop of JPEG blob using :resize_to_fill" do
@@ -180,9 +122,17 @@ class ActiveStorage::VariantTest < ActiveSupport::TestCase
     end
   end
 
-  test "PNG variation of JPEG blob" do
+  test "PNG variation of JPEG blob with lowercase format" do
     blob = create_file_blob(filename: "racecar.jpg")
     variant = blob.variant(format: :png).processed
+    assert_equal "racecar.png", variant.filename.to_s
+    assert_equal "image/png", variant.content_type
+    assert_equal "PNG", read_image(variant).type
+  end
+
+  test "PNG variation of JPEG blob with uppercase format" do
+    blob = create_file_blob(filename: "racecar.jpg")
+    variant = blob.variant(format: "PNG").processed
     assert_equal "racecar.png", variant.filename.to_s
     assert_equal "image/png", variant.content_type
     assert_equal "PNG", read_image(variant).type
@@ -237,12 +187,26 @@ class ActiveStorage::VariantTest < ActiveSupport::TestCase
     end
   end
 
+  test "doesn't crash content_type not recognized by mini_mime" do
+    blob = create_file_blob(filename: "racecar.jpg")
+
+    # image/jpg is not recognised by mini_mime (image/jpeg is correct)
+    blob.update(content_type: "image/jpg")
+
+    assert_nothing_raised do
+      blob.variant(resize: "100x100")
+    end
+
+    assert_nil blob.send(:format)
+    assert_equal :png, blob.send(:default_variant_format)
+  end
+
   private
     def process_variants_with(processor)
       previous_processor, ActiveStorage.variant_processor = ActiveStorage.variant_processor, processor
       yield
     rescue LoadError
-      skip "Variant processor #{processor.inspect} is not installed"
+      ENV["CI"] ? raise : skip("Variant processor #{processor.inspect} is not installed")
     ensure
       ActiveStorage.variant_processor = previous_processor
     end

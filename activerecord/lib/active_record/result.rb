@@ -36,12 +36,19 @@ module ActiveRecord
 
     attr_reader :columns, :rows, :column_types
 
+    def self.empty # :nodoc:
+      EMPTY
+    end
+
     def initialize(columns, rows, column_types = {})
       @columns      = columns
       @rows         = rows
       @hash_rows    = nil
       @column_types = column_types
     end
+
+    EMPTY = new([].freeze, [].freeze, {}.freeze)
+    private_constant :EMPTY
 
     # Returns true if this result set includes the column named +name+
     def includes_column?(name)
@@ -63,14 +70,6 @@ module ActiveRecord
       else
         hash_rows.to_enum { @rows.size }
       end
-    end
-
-    def to_hash
-      ActiveSupport::Deprecation.warn(<<-MSG.squish)
-        `ActiveRecord::Result#to_hash` has been renamed to `to_a`.
-        `to_hash` is deprecated and will be removed in Rails 6.1.
-      MSG
-      to_a
     end
 
     alias :map! :map
@@ -97,6 +96,14 @@ module ActiveRecord
     # Returns the last record from the rows collection.
     def last(n = nil)
       n ? hash_rows.last(n) : hash_rows.last
+    end
+
+    def result # :nodoc:
+      self
+    end
+
+    def cancel # :nodoc:
+      self
     end
 
     def cast_values(type_overrides = {}) # :nodoc:

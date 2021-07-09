@@ -33,6 +33,9 @@ module ActiveRecord
       @loaded = false
       @predicate_builder = predicate_builder
       @delegate_to_klass = false
+      @future_result = nil
+      @records = nil
+      @limited_count = nil
     end
 
     def initialize_copy(other)
@@ -69,10 +72,13 @@ module ActiveRecord
     #   user = users.new { |user| user.name = 'Oscar' }
     #   user.name # => Oscar
     def new(attributes = nil, &block)
-      block = _deprecated_scope_block("new", &block)
-      scoping { klass.new(attributes, &block) }
+      if attributes.is_a?(Array)
+        attributes.collect { |attr| new(attr, &block) }
+      else
+        block = current_scope_restoring_block(&block)
+        scoping { _new(attributes, &block) }
+      end
     end
-
     alias build new
 
     # Tries to create a new record with the same scoped attributes
@@ -98,8 +104,8 @@ module ActiveRecord
       if attributes.is_a?(Array)
         attributes.collect { |attr| create(attr, &block) }
       else
-        block = _deprecated_scope_block("create", &block)
-        scoping { klass.create(attributes, &block) }
+        block = current_scope_restoring_block(&block)
+        scoping { _create(attributes, &block) }
       end
     end
 
@@ -113,8 +119,8 @@ module ActiveRecord
       if attributes.is_a?(Array)
         attributes.collect { |attr| create!(attr, &block) }
       else
-        block = _deprecated_scope_block("create!", &block)
-        scoping { klass.create!(attributes, &block) }
+        block = current_scope_restoring_block(&block)
+        scoping { _create!(attributes, &block) }
       end
     end
 
@@ -151,7 +157,7 @@ module ActiveRecord
     # above can be alternatively written this way:
     #
     #   # Find the first user named "Scarlett" or create a new one with a
-    #   # different last name.
+    #   # particular last name.
     #   User.find_or_create_by(first_name: 'Scarlett') do |user|
     #     user.last_name = 'Johansson'
     #   end
@@ -178,7 +184,7 @@ module ActiveRecord
       find_by(attributes) || create!(attributes, &block)
     end
 
-    # Attempts to create a record with the given attributes in a table that has a unique constraint
+    # Attempts to create a record with the given attributes in a table that has a unique database constraint
     # on one or several of its columns. If a row already exists with one or several of these
     # unique constraints, the exception such an insertion would normally raise is caught,
     # and the existing record with those attributes is found using #find_by!.
@@ -189,7 +195,7 @@ module ActiveRecord
     #
     # There are several drawbacks to #create_or_find_by, though:
     #
-    # * The underlying table must have the relevant columns defined with unique constraints.
+    # * The underlying table must have the relevant columns defined with unique database constraints.
     # * A unique constraint violation may be triggered by only one, or at least less than all,
     #   of the given attributes. This means that the subsequent #find_by! may fail to find a
     #   matching record, which will then raise an <tt>ActiveRecord::RecordNotFound</tt> exception,
@@ -260,13 +266,20 @@ module ActiveRecord
 
     # Returns size of the records.
     def size
-      loaded? ? @records.length : count(:all)
+      if loaded?
+        records.length
+      else
+        count(:all)
+      end
     end
 
     # Returns true if there are no records.
     def empty?
-      return @records.empty? if loaded?
-      !exists?
+      if loaded?
+        records.empty?
+      else
+        !exists?
+      end
     end
 
     # Returns true if there are no records.
@@ -284,13 +297,15 @@ module ActiveRecord
     # Returns true if there is exactly one record.
     def one?
       return super if block_given?
-      limit_value ? records.one? : size == 1
+      return records.one? if limit_value || loaded?
+      limited_count == 1
     end
 
     # Returns true if there is more than one record.
     def many?
       return super if block_given?
-      limit_value ? records.many? : size > 1
+      return records.many? if limit_value || loaded?
+      limited_count > 1
     end
 
     # Returns a stable cache key that can be used to identify this query.
@@ -347,7 +362,7 @@ module ActiveRecord
     def compute_cache_version(timestamp_column) # :nodoc:
       timestamp_column = timestamp_column.to_s
 
-      if loaded? || distinct_value
+      if loaded?
         size = records.size
         if size > 0
           timestamp = records.map { |record| record.read_attribute(timestamp_column) }.max
@@ -360,6 +375,7 @@ module ActiveRecord
 
         if collection.has_limit_or_offset?
           query = collection.select("#{column} AS collection_cache_key_timestamp")
+          query._select!(table[Arel.star]) if distinct_value && collection.select_values.empty?
           subquery_alias = "subquery_for_cache_key"
           subquery_column = "#{subquery_alias}.collection_cache_key_timestamp"
           arel = query.build_subquery(subquery_alias, select_values % subquery_column)
@@ -403,15 +419,28 @@ module ActiveRecord
     #   end
     #   # => SELECT "comments".* FROM "comments" WHERE "comments"."post_id" = 1 ORDER BY "comments"."id" ASC LIMIT 1
     #
+    # If <tt>all_queries: true</tt> is passed, scoping will apply to all queries
+    # for the relation including +update+ and +delete+ on instances.
+    # Once +all_queries+ is set to true it cannot be set to false in a
+    # nested block.
+    #
     # Please check unscoped if you want to remove all previous scopes (including
     # the default_scope) during the execution of a block.
-    def scoping
-      already_in_scope? ? yield : _scoping(self) { yield }
+    def scoping(all_queries: nil)
+      registry = klass.scope_registry
+      if global_scope?(registry) && all_queries == false
+        raise ArgumentError, "Scoping is set to apply to all queries and cannot be unset in a nested block."
+      elsif already_in_scope?(registry)
+        yield
+      else
+        _scoping(self, registry, all_queries) { yield }
+      end
     end
 
-    def _exec_scope(name, *args, &block) # :nodoc:
+    def _exec_scope(*args, &block) # :nodoc:
       @delegate_to_klass = true
-      _scoping(_deprecated_spawn(name)) { instance_exec(*args, &block) || self }
+      registry = klass.scope_registry
+      _scoping(nil, registry) { instance_exec(*args, &block) || self }
     ensure
       @delegate_to_klass = false
     end
@@ -443,19 +472,6 @@ module ActiveRecord
     def update_all(updates)
       raise ArgumentError, "Empty list of attributes to change" if updates.blank?
 
-      if eager_loading?
-        relation = apply_join_dependency
-        return relation.update_all(updates)
-      end
-
-      stmt = Arel::UpdateManager.new
-      stmt.table(arel.join_sources.empty? ? table : arel.source)
-      stmt.key = table[primary_key]
-      stmt.take(arel.limit)
-      stmt.offset(arel.offset)
-      stmt.order(*arel.orders)
-      stmt.wheres = arel.constraints
-
       if updates.is_a?(Hash)
         if klass.locking_enabled? &&
             !updates.key?(klass.locking_column) &&
@@ -463,12 +479,17 @@ module ActiveRecord
           attr = table[klass.locking_column]
           updates[attr.name] = _increment_attribute(attr)
         end
-        stmt.set _substitute_values(updates)
+        values = _substitute_values(updates)
       else
-        stmt.set Arel.sql(klass.sanitize_sql_for_assignment(updates, table.name))
+        values = Arel.sql(klass.sanitize_sql_for_assignment(updates, table.name))
       end
 
-      @klass.connection.update stmt, "#{@klass} Update All"
+      arel = eager_loading? ? apply_join_dependency.arel : build_arel
+      arel.source.left = table
+
+      stmt = arel.compile_update(values, table[primary_key])
+
+      klass.connection.update(stmt, "#{klass} Update All").tap { reset }
     end
 
     def update(id = :all, attributes) # :nodoc:
@@ -541,8 +562,9 @@ module ActiveRecord
     # Destroys the records by instantiating each
     # record and calling its {#destroy}[rdoc-ref:Persistence#destroy] method.
     # Each object's callbacks are executed (including <tt>:dependent</tt> association options).
-    # Returns the collection of objects that were destroyed; each will be frozen, to
-    # reflect that no changes should be made (since they can't be persisted).
+    # Returns the collection of objects that were destroyed if
+    # +config.active_record.destroy_all_in_batches+ is set to +false+. Each
+    # will be frozen, to reflect that no changes should be made (since they can't be persisted).
     #
     # Note: Instantiation, callback execution, and deletion of each
     # record can be time consuming when you're removing many records at
@@ -554,8 +576,40 @@ module ActiveRecord
     # ==== Examples
     #
     #   Person.where(age: 0..18).destroy_all
-    def destroy_all
-      records.each(&:destroy).tap { reset }
+    #
+    # If +config.active_record.destroy_all_in_batches+ is set to +true+, it will ensure
+    # to perform the record's deletion in batches
+    # and destroy_all won't longer return the collection of the deleted records
+    #
+    # ==== Options
+    # * <tt>:start</tt> - Specifies the primary key value to start from, inclusive of the value.
+    # * <tt>:finish</tt> - Specifies the primary key value to end at, inclusive of the value.
+    # * <tt>:batch_size</tt> - Specifies the size of the batch. Defaults to 1000.
+    # * <tt>:error_on_ignore</tt> - Overrides the application config to specify if an error should be raised when
+    #   an order is present in the relation.
+    # * <tt>:order</tt> - Specifies the primary key order (can be :asc or :desc). Defaults to :asc.
+    #
+    # NOTE: These arguments are honoured only if +config.active_record.destroy_all_in_batches+ is set to +true+.
+    #
+    # ==== Examples
+    #
+    #   # Let's process from record 10_000 on, in batches of 2000.
+    #   Person.destroy_all(start: 10_000, batch_size: 2000)
+    #
+    def destroy_all(start: nil, finish: nil, batch_size: 1000, error_on_ignore: nil, order: :asc)
+      if ActiveRecord::Base.destroy_all_in_batches
+        batch_options = { of: batch_size, start: start, finish: finish, error_on_ignore: error_on_ignore, order: order }
+        in_batches(**batch_options).each_record(&:destroy).tap { reset }
+      else
+        ActiveSupport::Deprecation.warn(<<~MSG.squish)
+          As of Rails 7.1, destroy_all will no longer return the collection
+          of objects that were destroyed.
+          To transition to the new behaviour set the following in an
+          initializer:
+          Rails.application.config.active_record.destroy_all_in_batches = true
+        MSG
+        records.each(&:destroy).tap { reset }
+      end
     end
 
     # Deletes the records without instantiating the records
@@ -585,23 +639,12 @@ module ActiveRecord
         raise ActiveRecordError.new("delete_all doesn't support #{invalid_methods.join(', ')}")
       end
 
-      if eager_loading?
-        relation = apply_join_dependency
-        return relation.delete_all
-      end
+      arel = eager_loading? ? apply_join_dependency.arel : build_arel
+      arel.source.left = table
 
-      stmt = Arel::DeleteManager.new
-      stmt.from(arel.join_sources.empty? ? table : arel.source)
-      stmt.key = table[primary_key]
-      stmt.take(arel.limit)
-      stmt.offset(arel.offset)
-      stmt.order(*arel.orders)
-      stmt.wheres = arel.constraints
+      stmt = arel.compile_delete(table[primary_key])
 
-      affected = @klass.connection.delete(stmt, "#{@klass} Destroy")
-
-      reset
-      affected
+      klass.connection.delete(stmt, "#{klass} Delete All").tap { reset }
     end
 
     # Finds and destroys all records matching the specified conditions.
@@ -630,6 +673,32 @@ module ActiveRecord
       where(*args).delete_all
     end
 
+    # Schedule the query to be performed from a background thread pool.
+    #
+    #   Post.where(published: true).load_async # => #<ActiveRecord::Relation>
+    def load_async
+      return load if !connection.async_enabled?
+
+      unless loaded?
+        result = exec_main_query(async: connection.current_transaction.closed?)
+
+        if result.is_a?(Array)
+          @records = result
+        else
+          @future_result = result
+        end
+        @loaded = true
+      end
+
+      self
+    end
+
+    # Returns <tt>true</tt> if the relation was scheduled on the background
+    # thread pool.
+    def scheduled?
+      !!@future_result
+    end
+
     # Causes the records to be loaded from the database if they have not
     # been loaded already. You can use this if for some reason you need
     # to explicitly load some records before actually using them. The
@@ -637,7 +706,7 @@ module ActiveRecord
     #
     #   Post.where(published: true).load # => #<ActiveRecord::Relation>
     def load(&block)
-      unless loaded?
+      if !loaded? || scheduled?
         @records = exec_queries(&block)
         @loaded = true
       end
@@ -652,11 +721,14 @@ module ActiveRecord
     end
 
     def reset
+      @future_result&.cancel
+      @future_result = nil
       @delegate_to_klass = false
-      @_deprecated_scope_source = nil
       @to_sql = @arel = @loaded = @should_eager_load = nil
       @offsets = @take = nil
-      @records = [].freeze
+      @cache_keys = nil
+      @records = nil
+      @limited_count = nil
       self
     end
 
@@ -665,16 +737,14 @@ module ActiveRecord
     #   User.where(name: 'Oscar').to_sql
     #   # => SELECT "users".* FROM "users"  WHERE "users"."name" = 'Oscar'
     def to_sql
-      @to_sql ||= begin
-        if eager_loading?
-          apply_join_dependency do |relation, join_dependency|
-            relation = join_dependency.apply_column_aliases(relation)
-            relation.to_sql
-          end
-        else
-          conn = klass.connection
-          conn.unprepared_statement { conn.to_sql(arel) }
+      @to_sql ||= if eager_loading?
+        apply_join_dependency do |relation, join_dependency|
+          relation = join_dependency.apply_column_aliases(relation)
+          relation.to_sql
         end
+      else
+        conn = klass.connection
+        conn.unprepared_statement { conn.to_sql(arel) }
       end
     end
 
@@ -687,8 +757,7 @@ module ActiveRecord
     end
 
     def scope_for_create
-      hash = where_values_hash
-      hash.delete(klass.inheritance_column) if klass.finder_needs_type_condition?
+      hash = where_clause.to_h(klass.table_name, equality_only: true)
       create_with_value.each { |k, v| hash[k.to_s] = v } unless create_with_value.empty?
       hash
     end
@@ -733,8 +802,12 @@ module ActiveRecord
       @values.dup
     end
 
+    def values_for_queries # :nodoc:
+      @values.except(:extending, :skip_query_cache, :strict_loading)
+    end
+
     def inspect
-      subject = loaded? ? records : self
+      subject = loaded? ? records : annotate("loading for inspect")
       entries = subject.take([limit_value, 11].compact.min).map!(&:inspect)
 
       entries[10] = "..." if entries.size == 11
@@ -767,19 +840,13 @@ module ActiveRecord
     def preload_associations(records) # :nodoc:
       preload = preload_values
       preload += includes_values unless eager_loading?
-      preloader = nil
       scope = strict_loading_value ? StrictLoadingScope : nil
       preload.each do |associations|
-        preloader ||= build_preloader
-        preloader.preload records, associations, scope
+        ActiveRecord::Associations::Preloader.new(records: records, associations: associations, scope: scope).call
       end
     end
 
-    attr_reader :_deprecated_scope_source # :nodoc:
-
     protected
-      attr_writer :_deprecated_scope_source # :nodoc:
-
       def load_records(records)
         @records = records.freeze
         @loaded = true
@@ -790,29 +857,48 @@ module ActiveRecord
       end
 
     private
-      def already_in_scope?
-        @delegate_to_klass && begin
-          scope = klass.current_scope(true)
-          scope && !scope._deprecated_scope_source
-        end
+      def already_in_scope?(registry)
+        @delegate_to_klass && registry.current_scope(klass, true)
       end
 
-      def _deprecated_spawn(name)
-        spawn.tap { |scope| scope._deprecated_scope_source = name }
+      def global_scope?(registry)
+        registry.global_current_scope(klass, true)
       end
 
-      def _deprecated_scope_block(name, &block)
+      def current_scope_restoring_block(&block)
+        current_scope = klass.current_scope(true)
         -> record do
-          klass.current_scope = _deprecated_spawn(name)
+          klass.current_scope = current_scope
           yield record if block_given?
         end
       end
 
-      def _scoping(scope)
-        previous, klass.current_scope = klass.current_scope(true), scope
+      def _new(attributes, &block)
+        klass.new(attributes, &block)
+      end
+
+      def _create(attributes, &block)
+        klass.create(attributes, &block)
+      end
+
+      def _create!(attributes, &block)
+        klass.create!(attributes, &block)
+      end
+
+      def _scoping(scope, registry, all_queries = false)
+        previous = registry.current_scope(klass, true)
+        registry.set_current_scope(klass, scope)
+
+        if all_queries
+          previous_global = registry.global_current_scope(klass, true)
+          registry.set_global_current_scope(klass, scope)
+        end
         yield
       ensure
-        klass.current_scope = previous
+        registry.set_current_scope(klass, previous)
+        if all_queries
+          registry.set_global_current_scope(klass, previous_global)
+        end
       end
 
       def _substitute_values(values)
@@ -835,29 +921,52 @@ module ActiveRecord
 
       def exec_queries(&block)
         skip_query_cache_if_necessary do
-          records =
-            if where_clause.contradiction?
-              []
-            elsif eager_loading?
-              apply_join_dependency do |relation, join_dependency|
-                if relation.null_relation?
-                  []
-                else
-                  relation = join_dependency.apply_column_aliases(relation)
-                  rows = connection.select_all(relation.arel, "SQL")
-                  join_dependency.instantiate(rows, strict_loading_value, &block)
-                end.freeze
-              end
-            else
-              klass.find_by_sql(arel, &block).freeze
-            end
+          rows = if scheduled?
+            future = @future_result
+            @future_result = nil
+            future.result
+          else
+            exec_main_query
+          end
 
+          records = instantiate_records(rows, &block)
           preload_associations(records) unless skip_preloading_value
 
           records.each(&:readonly!) if readonly_value
           records.each(&:strict_loading!) if strict_loading_value
 
           records
+        end
+      end
+
+      def exec_main_query(async: false)
+        skip_query_cache_if_necessary do
+          if where_clause.contradiction?
+            [].freeze
+          elsif eager_loading?
+            apply_join_dependency do |relation, join_dependency|
+              if relation.null_relation?
+                [].freeze
+              else
+                relation = join_dependency.apply_column_aliases(relation)
+                @_join_dependency = join_dependency
+                connection.select_all(relation.arel, "SQL", async: async)
+              end
+            end
+          else
+            klass._query_by_sql(arel, async: async)
+          end
+        end
+      end
+
+      def instantiate_records(rows, &block)
+        return [].freeze if rows.empty?
+        if eager_loading?
+          records = @_join_dependency.instantiate(rows, strict_loading_value, &block).freeze
+          @_join_dependency = nil
+          records
+        else
+          klass._load_from_sql(rows, &block).freeze
         end
       end
 
@@ -869,10 +978,6 @@ module ActiveRecord
         else
           yield
         end
-      end
-
-      def build_preloader
-        ActiveRecord::Associations::Preloader.new
       end
 
       def references_eager_loaded_tables?
@@ -897,6 +1002,10 @@ module ActiveRecord
         # always convert table names to downcase as in Oracle quoted table names are in uppercase
         # ignore raw_sql_ that is used by Oracle adapter as alias for limit/offset subqueries
         string.scan(/[a-zA-Z_][.\w]+(?=.?\.)/).map!(&:downcase) - ["raw_sql_"]
+      end
+
+      def limited_count
+        @limited_count ||= limit(2).count
       end
   end
 end

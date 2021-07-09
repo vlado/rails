@@ -125,6 +125,29 @@ class TimeExtCalculationsTest < ActiveSupport::TestCase
     assert_equal 0.001.to_r / 1000000, time.sec_fraction.to_f
   end
 
+  def test_floor
+    time = Time.utc(2016, 4, 23, 0, 0, "0.123456789".to_r)
+
+    assert_equal "0".to_r, time.floor.subsec
+    assert_equal "0.1".to_r, time.floor(1).subsec
+    assert_equal "0.12".to_r, time.floor(2).subsec
+    assert_equal "0.123456789".to_r, time.floor(9).subsec
+    assert_equal "0.123456789".to_r, time.floor(10).subsec
+  end
+
+  def test_ceil
+    time = Time.utc(2016, 4, 30, 23, 59, "59.123456789".to_r)
+
+    assert_equal "0".to_r, time.ceil.subsec
+    assert_equal Time.utc(2016, 5, 1, 0, 0), time.ceil
+
+    assert_equal "0.124".to_r, time.ceil(3).subsec
+    assert_equal "0.12346".to_r, time.ceil(5).subsec
+    assert_equal "0.12345679".to_r, time.ceil(8).subsec
+    assert_equal "0.123456789".to_r, time.ceil(9).subsec
+    assert_equal "0.123456789".to_r.to_f, time.ceil(11).subsec.to_f
+  end
+
   def test_beginning_of_day
     assert_equal Time.local(2005, 2, 4, 0, 0, 0), Time.local(2005, 2, 4, 10, 10, 10).beginning_of_day
     with_env_tz "US/Eastern" do
@@ -460,6 +483,14 @@ class TimeExtCalculationsTest < ActiveSupport::TestCase
     assert_equal Time.local(2005, 2, 28, 20, 22, 19), Time.local(2005, 2, 28, 15, 15, 10).advance(hours: 5, minutes: 7, seconds: 9)
     assert_equal Time.local(2005, 2, 28, 10, 8, 1), Time.local(2005, 2, 28, 15, 15, 10).advance(hours: -5, minutes: -7, seconds: -9)
     assert_equal Time.local(2013, 10, 17, 20, 22, 19), Time.local(2005, 2, 28, 15, 15, 10).advance(years: 7, months: 19, weeks: 2, days: 5, hours: 5, minutes: 7, seconds: 9)
+
+    assert_equal Time.new(2021, 5, 29, 0, 0, 0, "+03:00"), Time.new(2021, 5, 29, 0, 0, 0, ActiveSupport::TimeZone["Moscow"])
+    assert_equal Time.new(2021, 5, 29, 0, 0, 0, "+03:00").advance(seconds: 60), Time.new(2021, 5, 29, 0, 0, 0, ActiveSupport::TimeZone["Moscow"]).advance(seconds: 60)
+    assert_equal Time.new(2021, 5, 29, 0, 0, 0, "+03:00").advance(days: 3), Time.new(2021, 5, 29, 0, 0, 0, ActiveSupport::TimeZone["Moscow"]).advance(days: 3)
+
+    assert_equal Time.new(2021, 5, 29, 0, 0, 0, "+03:00"), ActiveSupport::TimeZone["Moscow"].local(2021, 5, 29, 0, 0, 0)
+    assert_equal Time.new(2021, 5, 29, 0, 0, 0, "+03:00").advance(seconds: 60), ActiveSupport::TimeZone["Moscow"].local(2021, 5, 29, 0, 0, 0).advance(seconds: 60)
+    assert_equal Time.new(2021, 5, 29, 0, 0, 0, "+03:00").advance(days: 3), ActiveSupport::TimeZone["Moscow"].local(2021, 5, 29, 0, 0, 0).advance(days: 3)
   end
 
   def test_utc_advance
@@ -894,6 +925,10 @@ class TimeExtCalculationsTest < ActiveSupport::TestCase
     rescue TypeError
       assert_raise(TypeError) { assert_equal(Time.utc(2000, 1, 1, 0, 0, 0), Time.at(ActiveSupport::TimeWithZone.new(Time.utc(2000, 1, 1, 0, 0, 0), ActiveSupport::TimeZone["UTC"]), 0)) }
     end
+  end
+
+  def test_at_with_in_option
+    assert_equal Time.new(1970, 1, 1, 0, 42, 17, "-08:00"), Time.at(31337, in: -28800)
   end
 
   def test_at_with_time_with_zone_returns_local_time
